@@ -70,7 +70,7 @@ services:
   tyk-gateway-datacenter-1-alfa:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-1-alfa
-    image: ${tyk_alfa_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
@@ -88,7 +88,7 @@ services:
   tyk-gateway-datacenter-1-beta:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-1-beta
-    image: ${tyk_beta_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
@@ -106,7 +106,7 @@ services:
   tyk-gateway-datacenter-2-alfa:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-2-alfa
-    image: ${tyk_alfa_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
@@ -124,7 +124,7 @@ services:
   tyk-gateway-datacenter-2-beta:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-2-beta
-    image: ${tyk_beta_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
