@@ -96,5 +96,3 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_METADATA_LOG_DIR: /var/lib/kafka/data
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-    volumes:
-      - ./temp/kafka/data:/var/lib/kafka/data 
