@@ -10,10 +10,11 @@ on:
       - master
       - release-*
 env:
-  VARIATION: prod
+  VARIATION: prod-variation
   BASE_REF: ${{startsWith(github.event_name, 'pull_request') && github.base_ref || github.ref_name}}
 jobs:
   test-controller-api:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       envfiles: ${{ steps.params.outputs.envfiles }}
@@ -33,7 +34,7 @@ jobs:
   api-tests:
     needs:
       - test-controller-api
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m-2
     env:
       XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
       BASE_REF: master
@@ -88,8 +89,10 @@ jobs:
           set -eaxo pipefail
           docker run -q --rm -v ~/.docker/config.json:/root/.docker/config.json tykio/gromit policy match ${tags[0]} ${match_tag} 2>versions.env
           echo '# alfa and beta have to come after the override
-          tyk_alfa_image=$tyk_ee_image
-          tyk_beta_image=$tyk_ee_image
+
+          tyk_image="$ECR/tyk-ee"
+          tyk_alfa_image=$tyk_image
+          tyk_beta_image=$tyk_image
           ECR=${{steps.ecr.outputs.registry}}
           tyk_pump_image=${{matrix.pump}}
 
@@ -105,21 +108,38 @@ jobs:
           ./dash-bootstrap.sh http://localhost:3000
           docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile slave-datacenter up --quiet-pull -d
           echo "$(cat pytest.env | grep USER_API_SECRET)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
           path: tyk-analytics
           token: ${{ secrets.ORG_GH_TOKEN }}
-          fetch-depth: 1
+          fetch-depth: 0
           sparse-checkout: tests/api
-      - name: Branch for test code
-        id: timestamp
+      - name: Choosing test code branch
         working-directory: tyk-analytics/tests/api
         run: |
-          # Generate report id
-          git fetch --no-tags --depth 1 origin "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-          git switch $BASE_REF
-          echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
+          if [[ ${{ github.event_name }} == "pull_request" ]]; then
+            PR_BRANCH=${{ github.event.pull_request.head.ref }}
+            TARGET_BRANCH=${{ github.event.pull_request.base.ref }}
+            echo "Looking for PR_BRANCH:$PR_BRANCH or TARGET_BRANCH:$TARGET_BRANCH..."
+            if git rev-parse --verify "origin/$PR_BRANCH" >/dev/null 2>&1; then
+              echo "PR branch $PR_BRANCH exists. Checking out..."
+              git checkout "$PR_BRANCH"
+            elif git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
+              echo "Target branch $TARGET_BRANCH exists. Checking out..."
+              git checkout "$TARGET_BRANCH"
+            fi
+          fi
+          if [[ ${{ github.event_name }} == "push" ]]; then
+            PUSH_BRANCH=${{ github.ref_name }}
+            echo "Looking for PUSH_BRANCH:$PUSH_BRANCH..."
+            if git rev-parse --verify "origin/$PUSH_BRANCH" >/dev/null 2>&1; then
+              echo "Push branch $PUSH_BRANCH exists. Checking out..."
+              git checkout "$PUSH_BRANCH"
+            fi
+          fi
+          echo "Current commit: $(git rev-parse HEAD)"
       - uses: actions/setup-python@v5
         with:
           cache: 'pip'
@@ -152,7 +172,7 @@ jobs:
         id: metadata_report
         if: always() && (steps.test_execution.conclusion != 'skipped')
         env:
-          REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.timestamp.outputs.ts}}
+          REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.env_up.outputs.ts}}
           METADATA_REPORT_PATH: metadata.toml
         run: |
           # Generate metadata report
@@ -195,6 +215,7 @@ jobs:
           retention-days: 3
           overwrite: true
   test-controller-ui:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       envfiles: ${{ steps.params.outputs.envfiles }}
@@ -214,7 +235,7 @@ jobs:
   ui-tests:
     needs:
       - test-controller-ui
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest-m-2
     env:
       XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
       BASE_REF: master
@@ -269,8 +290,10 @@ jobs:
           set -eaxo pipefail
           docker run -q --rm -v ~/.docker/config.json:/root/.docker/config.json tykio/gromit policy match ${tags[0]} ${match_tag} 2>versions.env
           echo '# alfa and beta have to come after the override
-          tyk_alfa_image=$tyk_ee_image
-          tyk_beta_image=$tyk_ee_image
+
+          tyk_image="$ECR/tyk-ee"
+          tyk_alfa_image=$tyk_image
+          tyk_beta_image=$tyk_image
           ECR=${{steps.ecr.outputs.registry}}
           tyk_pump_image=${{matrix.pump}}
 
@@ -286,21 +309,38 @@ jobs:
           ./dash-bootstrap.sh http://localhost:3000
           docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile slave-datacenter up --quiet-pull -d
           echo "$(cat pytest.env | grep USER_API_SECRET)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
           path: tyk-analytics
           token: ${{ secrets.ORG_GH_TOKEN }}
-          fetch-depth: 1
+          fetch-depth: 0
           sparse-checkout: tests/ui
-      - name: Branch for test code
-        id: timestamp
+      - name: Choosing test code branch
         working-directory: tyk-analytics/tests/ui
         run: |
-          # Generate report id
-          git fetch --no-tags --depth 1 origin "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-          git switch $BASE_REF
-          echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
+          if [[ ${{ github.event_name }} == "pull_request" ]]; then
+            PR_BRANCH=${{ github.event.pull_request.head.ref }}
+            TARGET_BRANCH=${{ github.event.pull_request.base.ref }}
+            echo "Looking for PR_BRANCH:$PR_BRANCH or TARGET_BRANCH:$TARGET_BRANCH..."
+            if git rev-parse --verify "origin/$PR_BRANCH" >/dev/null 2>&1; then
+              echo "PR branch $PR_BRANCH exists. Checking out..."
+              git checkout "$PR_BRANCH"
+            elif git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
+              echo "Target branch $TARGET_BRANCH exists. Checking out..."
+              git checkout "$TARGET_BRANCH"
+            fi
+          fi
+          if [[ ${{ github.event_name }} == "push" ]]; then
+            PUSH_BRANCH=${{ github.ref_name }}
+            echo "Looking for PUSH_BRANCH:$PUSH_BRANCH..."
+            if git rev-parse --verify "origin/$PUSH_BRANCH" >/dev/null 2>&1; then
+              echo "Push branch $PUSH_BRANCH exists. Checking out..."
+              git checkout "$PUSH_BRANCH"
+            fi
+          fi
+          echo "Current commit: $(git rev-parse HEAD)"
       - name: Install Node.js 18.16
         uses: actions/setup-node@v4
         with:
@@ -310,19 +350,35 @@ jobs:
       - name: Fix private module deps
         env:
           TOKEN: '${{ secrets.ORG_GH_TOKEN }}'
-        run: "git config --global url.\"https://${TOKEN}@github.com\".insteadOf \"https://github.com\"                    \n"
+        run: >
+          git config --global url."https://${TOKEN}@github.com".insteadOf "https://github.com"
       - name: Execute UI tests
         working-directory: tyk-analytics/tests/ui
+        id: test_execution
         env:
           GW_URL: 'https://localhost:8080/'
           NODE_TLS_REJECT_UNAUTHORIZED: 0
           UI_MARKERS: ${{ matrix.envfiles.uimarkers && format('--grep {0}', matrix.envfiles.uimarkers ) || '' }}
-        run: "npm ci\nnpx playwright install --with-deps chromium\nPLAYWRIGHT_JUNIT_OUTPUT_NAME=${XUNIT_REPORT_PATH} npx playwright test --project=chromium --reporter=junit $UI_MARKERS \n"
+        run: "npm ci\nnpx playwright install --with-deps chromium\nPLAYWRIGHT_JUNIT_OUTPUT_NAME=${XUNIT_REPORT_PATH} npx playwright test --project=chromium --reporter=junit,html $UI_MARKERS \n"
+      - name: Upload Playwright Test Report to S3
+        if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
+        run: npm run upload_report_to_s3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.UI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.UI_AWS_SECRET_ACCESS_KEY }}
+          RUN_ID: 'tyk-analytics/${{ github.run_id }}'
+        working-directory: tyk-analytics/tests/ui
+      - name: Share S3 report link into summary
+        if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
+        run: |
+          echo "# :clipboard: S3 UI Test REPORT: ${{ matrix.envfiles.db }}-${{ matrix.envfiles.conf }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ steps.test_execution.outcome == 'success' && ':white_check_mark:' || ':no_entry_sign:' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- [Link to report](https://tyk-qa-reports.s3.eu-central-1.amazonaws.com/tyk-analytics/${{ github.run_id }}/index.html)" >> $GITHUB_STEP_SUMMARY
       - name: Generate metadata and upload test reports
         id: metadata_report
         if: always() && (steps.test_execution.conclusion != 'skipped')
         env:
-          REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.timestamp.outputs.ts}}
+          REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.env_up.outputs.ts}}
           METADATA_REPORT_PATH: metadata.toml
         run: |
           # Generate metadata report
@@ -366,7 +422,7 @@ jobs:
           overwrite: true
   release:
     if: ${{ startsWith(github.ref, 'refs/tags') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m-2
     needs:
       - api-tests
       - ui-tests
