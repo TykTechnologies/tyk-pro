@@ -76,7 +76,6 @@ services:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8181
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=alfa
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
     volumes:
       - ./certs:/usr/local/share/ca-certificates
@@ -94,7 +93,6 @@ services:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8182
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=beta
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
     volumes:
       - ./certs:/usr/local/share/ca-certificates
@@ -112,7 +110,6 @@ services:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8281
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=alfa
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
     volumes:
       - ./certs:/usr/local/share/ca-certificates
@@ -130,7 +127,6 @@ services:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8282
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=beta
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
     volumes:
       - ./certs:/usr/local/share/ca-certificates
