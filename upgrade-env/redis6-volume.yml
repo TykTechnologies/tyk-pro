@@ -1,4 +1,4 @@
 services:
-  postgres:
+  redis:
     volumes:
       - ./upgrade-env/redis_data:/bitnami/redis
