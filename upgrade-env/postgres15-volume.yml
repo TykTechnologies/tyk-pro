@@ -1,4 +1,0 @@
-services:
-  postgres:
-    volumes:
-      - ./upgrade-env/postgres:/var/lib/postgresql/data
