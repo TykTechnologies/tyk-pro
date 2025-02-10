@@ -180,4 +180,9 @@ $ export USER_API_SECRET=<COPY VALUE FROM BOOTSTRAP OUTPUT>
 $ pytest -c pytest_local.ini --ci -m "not local and not dind and not sql"
 
 ```
+
+# Upgrade Tests
+
+For information on upgrade tests, please refer to the [Upgrade Tests README](upgrade-env/readme.md).
+
 test auto gates
