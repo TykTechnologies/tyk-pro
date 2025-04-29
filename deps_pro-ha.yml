@@ -96,3 +96,19 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_METADATA_LOG_DIR: /var/lib/kafka/data
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+  rabbitmq:
+    profiles: ["all", "master-datacenter"]
+    container_name: rabbitmq
+    image: rabbitmq:4.1.0-management-alpine
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
