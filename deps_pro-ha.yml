@@ -42,7 +42,7 @@ services:
   upstream:
     profiles: ["all", "master-datacenter"]
     container_name: httpbin.org
-    image: kennethreitz/httpbin
+    image: mccutchen/go-httpbin
     restart: always
 
   restcountries:
