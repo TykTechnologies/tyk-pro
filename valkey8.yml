@@ -2,7 +2,7 @@ version: "3"
 services:
   valkey:
     profiles: ["all", "master-datacenter"]
-    container_name: valkey
+    container_name: redis
     image: valkey/valkey:8.1.1-bookworm
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
@@ -17,7 +17,7 @@ services:
 
   valkey-datacenter-1:
     profiles: ["all", "slave-datacenter"]
-    container_name: valkey-datacenter-1
+    container_name: redis-datacenter-1
     image: valkey/valkey:8.1.1-bookworm
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
@@ -32,7 +32,7 @@ services:
 
   valkey-datacenter-2:
     profiles: ["all", "slave-datacenter"]
-    container_name: valkey-datacenter-2
+    container_name: redis-datacenter-2
     image: valkey/valkey:8.1.1-bookworm
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
