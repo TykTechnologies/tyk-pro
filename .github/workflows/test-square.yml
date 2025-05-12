@@ -10,7 +10,7 @@ on:
       - master
       - release-*
 env:
-  VARIATION: db-variations
+  VARIATION: prod-variations
   BASE_REF: ${{startsWith(github.event_name, 'pull_request') && github.base_ref || github.ref_name}}
 jobs:
   test-controller-api:
