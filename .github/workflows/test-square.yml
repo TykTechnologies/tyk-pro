@@ -140,34 +140,12 @@ jobs:
             fi
           fi
           echo "Current commit: $(git rev-parse HEAD)"
-      - uses: actions/setup-python@v5
-        with:
-          cache: 'pip'
-          python-version: '3.10'
       - name: Run API tests
         id: test_execution
-        working-directory: tyk-analytics/tests/api
-        run: |
-          pytest="pytest --ci --random-order --force-flaky --no-success-flaky-report --maxfail=3 --junitxml=${XUNIT_REPORT_PATH} --cache-clear --ignore=./tests/mdcb -v --log-cli-level=ERROR"
-          pip install -r requirements.txt
-          cat >pytest.env <<-EOF
-          TYK_TEST_BASE_URL=http://localhost:3000/
-          TYK_TEST_GW_URL=https://localhost:8080/
-          TYK_TEST_GW_1_ALFA_URL=https://localhost:8181/
-          TYK_TEST_GW_1_BETA_URL=https://localhost:8182/
-          TYK_TEST_GW_2_ALFA_URL=https://localhost:8281/
-          TYK_TEST_GW_2_BETA_URL=https://localhost:8282/
-          TYK_TEST_MONGODB=localhost:27017
-          TYK_TEST_REDIS=localhost
-          TYK_TEST_DB_ADMIN=12345
-          TYK_TEST_GW_SECRET=352d20ee67be67f6340b4c0605b044b7
-          TYK_TEST_DB_NAME=tyk_analytics
-          TYK_TEST_FEDERATION_HOST=federation
-          TYK_TEST_GRAPHQL_FAKER_HOST=graphql-faker
-          GATEWAY_CONTAINER_NAME=tyk
-          USER_API_SECRET=${{ steps.env_up.outputs.USER_API_SECRET }}
-          EOF
-          env $(cat pytest.env | xargs) $pytest -m "${{ matrix.envfiles.apimarkers }}"
+        uses: TykTechnologies/github-actions/.github/actions/api-tests@QA-1607_test_reusable_workflows
+        with:
+          user_api_secret: ${{ steps.env_up.outputs.USER_API_SECRET}}
+          api_markers: ${{ matrix.envfiles.apimarkers }}  
       - name: Generate metadata and upload test reports
         id: metadata_report
         if: always() && (steps.test_execution.conclusion != 'skipped')
