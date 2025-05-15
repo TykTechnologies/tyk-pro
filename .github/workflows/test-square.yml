@@ -10,7 +10,7 @@ on:
       - master
       - release-*
 env:
-  VARIATION: prod-variations
+  VARIATION: test-variations
   BASE_REF: ${{startsWith(github.event_name, 'pull_request') && github.base_ref || github.ref_name}}
 jobs:
   test-controller-api:
@@ -142,56 +142,13 @@ jobs:
           echo "Current commit: $(git rev-parse HEAD)"
       - name: Run API tests
         id: test_execution
-        uses: TykTechnologies/github-actions/.github/actions/api-tests@QA-1607_test_reusable_workflows
+        uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@QA-1607_test_reusable_workflows
         with:
           user_api_secret: ${{ steps.env_up.outputs.USER_API_SECRET}}
-          api_markers: ${{ matrix.envfiles.apimarkers }}  
-      - name: Generate metadata and upload test reports
-        id: metadata_report
-        if: always() && (steps.test_execution.conclusion != 'skipped')
-        env:
-          REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.env_up.outputs.ts}}
-          METADATA_REPORT_PATH: metadata.toml
-        run: |
-          # Generate metadata report
-          set -eo pipefail
-          echo "[metadata]
-          repo = ${{ github.repository }}
-          branch = ${{ github.ref }}
-          commit = ${{ github.sha }}
-          test_suite_version = $BASE_REF
-          test_suite_name = ${{ github.job }}
-          test_suite_run = ${{ github.run_id }}-${{ github.run_attempt }}
-          db = ${{ matrix.envfiles.db }}
-          conf = ${{ matrix.envfiles.config }}
-          cache = ${{ matrix.envfiles.cache }}
-          pump_compatibility = ${{ matrix.pump }}
-          sink_compatibility = ${{ matrix.sink }}
-          " | tee ${METADATA_REPORT_PATH}
-          aws s3 cp ${XUNIT_REPORT_PATH}  s3://assets.dev.tyk.technology/testreports/${REPORT_NAME#*/}.xml
-          aws s3 cp ${METADATA_REPORT_PATH} s3://assets.dev.tyk.technology/testreports/${REPORT_NAME#*/}.metadata.toml
-      - name: Docker logs for all components
-        if: failure() && (steps.test_execution.outcome != 'success' || steps.env_up.outcome != 'success')
-        working-directory: auto
-        env:
-          pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
-          TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
-          TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-          ECR: ${{ steps.ecr.outputs.registry }}
-        run: |
-          docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile all logs | sort > ${{ github.workspace }}/docker-compose.log
-          echo "::group::DockerLogs"
-          cat ${{ github.workspace }}/docker-compose.log
-          echo "::endgroup::"
-      - name: Upload compose logs
-        uses: actions/upload-artifact@v4
-        if: failure() && (steps.test_execution.outcome != 'success' || steps.env_up.outcome != 'success')
-        with:
-          name: docker-compose-logs-${{ github.job }}-${{ matrix.envfiles.db }}-${{ matrix.envfiles.conf }}-${{ github.run_id }}
-          path: ${{ github.workspace }}/docker-compose.log
-          retention-days: 3
-          overwrite: true
+          api_markers: ${{ matrix.envfiles.apimarkers }}
+      - name: Reporting
+        uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
+
   test-controller-ui:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
