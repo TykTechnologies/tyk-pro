@@ -79,6 +79,7 @@ jobs:
         uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
         with:
           base_ref: $BASE_REF
+          tags: ${{ needs.test-controller-api.outputs.envfiles.tags }}
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
