@@ -75,40 +75,10 @@ jobs:
           path: auto
           fetch-depth: 1
       - name: env up
-        shell: bash
-        working-directory: auto
         id: env_up
-        env:
-          pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
-          TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
-          TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-        run: |
-          match_tag=${{steps.ecr.outputs.registry}}/tyk-pro:$BASE_REF
-          tags=($match_tag)
-          set -eaxo pipefail
-          docker run -q --rm -v ~/.docker/config.json:/root/.docker/config.json tykio/gromit policy match ${tags[0]} ${match_tag} 2>versions.env
-          echo '# alfa and beta have to come after the override
-
-          tyk_image="$ECR/tyk-ee"
-          tyk_alfa_image=$tyk_image
-          tyk_beta_image=$tyk_image
-          ECR=${{steps.ecr.outputs.registry}}
-          tyk_pump_image=${{matrix.pump}}
-
-          tyk_sink_image=${{matrix.sink}}
-          confs_dir=./pro-ha
-          env_file=local.env' >> versions.env
-          cat ./confs/${{ matrix.envfiles.config }}.env local-${{ matrix.envfiles.db }}.env > local.env
-          echo "::group::versions"
-          cat versions.env local.env
-          echo "::endgroup::"
-          # bring up env, the project name is important
-          docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile master-datacenter up --quiet-pull -d
-          ./dash-bootstrap.sh http://localhost:3000
-          docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile slave-datacenter up --quiet-pull -d
-          echo "$(cat pytest.env | grep USER_API_SECRET)" >> $GITHUB_OUTPUT
-          echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
+        uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
+        with:
+          base_ref: $BASE_REF
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
@@ -148,6 +118,7 @@ jobs:
           api_markers: ${{ matrix.envfiles.apimarkers }}
       - name: Reporting
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
+        secrets: inherit
 
   test-controller-ui:
     if: github.event.pull_request.draft == false
