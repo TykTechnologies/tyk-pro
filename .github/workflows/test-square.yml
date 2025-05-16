@@ -118,7 +118,6 @@ jobs:
           api_markers: ${{ matrix.envfiles.apimarkers }}
       - name: Reporting
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
-        secrets: inherit
 
   test-controller-ui:
     if: github.event.pull_request.draft == false
