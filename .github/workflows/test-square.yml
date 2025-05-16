@@ -81,6 +81,7 @@ jobs:
           base_ref: $BASE_REF
           tags: ${{ needs.test-controller-api.outputs.envfiles.tags }}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
+          matrix: ${{ matrix }}
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
