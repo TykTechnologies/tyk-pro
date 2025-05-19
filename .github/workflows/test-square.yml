@@ -74,6 +74,12 @@ jobs:
         with:
           path: auto
           fetch-depth: 1
+      - name: Checkout test code
+        uses: TykTechnologies/github-actions/.github/actions/tests/choose-test-branch@QA-1607_test_reusable_workflows
+        with:
+          org_gh_token: ${{ secrets.ORG_GH_TOKEN }}
+          test_folder: api
+          
       - name: env up
         id: env_up
         uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
@@ -84,37 +90,7 @@ jobs:
           matrix: ${{ toJson(matrix) }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-      - uses: actions/checkout@v4
-        with:
-          repository: TykTechnologies/tyk-analytics
-          path: tyk-analytics
-          token: ${{ secrets.ORG_GH_TOKEN }}
-          fetch-depth: 0
-          sparse-checkout: tests/api
-      - name: Choosing test code branch
-        working-directory: tyk-analytics/tests/api
-        run: |
-          if [[ ${{ github.event_name }} == "pull_request" ]]; then
-            PR_BRANCH=${{ github.event.pull_request.head.ref }}
-            TARGET_BRANCH=${{ github.event.pull_request.base.ref }}
-            echo "Looking for PR_BRANCH:$PR_BRANCH or TARGET_BRANCH:$TARGET_BRANCH..."
-            if git rev-parse --verify "origin/$PR_BRANCH" >/dev/null 2>&1; then
-              echo "PR branch $PR_BRANCH exists. Checking out..."
-              git checkout "$PR_BRANCH"
-            elif git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
-              echo "Target branch $TARGET_BRANCH exists. Checking out..."
-              git checkout "$TARGET_BRANCH"
-            fi
-          fi
-          if [[ ${{ github.event_name }} == "push" ]]; then
-            PUSH_BRANCH=${{ github.ref_name }}
-            echo "Looking for PUSH_BRANCH:$PUSH_BRANCH..."
-            if git rev-parse --verify "origin/$PUSH_BRANCH" >/dev/null 2>&1; then
-              echo "Push branch $PUSH_BRANCH exists. Checking out..."
-              git checkout "$PUSH_BRANCH"
-            fi
-          fi
-          echo "Current commit: $(git rev-parse HEAD)"
+
       - name: Run API tests
         id: test_execution
         uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@QA-1607_test_reusable_workflows
