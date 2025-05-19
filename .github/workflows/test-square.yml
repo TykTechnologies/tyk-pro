@@ -82,6 +82,8 @@ jobs:
           tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
           matrix: ${{ toJson(matrix) }}
+          TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
+          TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
       - uses: actions/checkout@v4
         with:
           repository: TykTechnologies/tyk-analytics
