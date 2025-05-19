@@ -76,7 +76,6 @@ jobs:
         with:
           org_gh_token: ${{ secrets.ORG_GH_TOKEN }}
           test_folder: api
-          
       - name: env up
         id: env_up
         uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
@@ -87,7 +86,6 @@ jobs:
           matrix: ${{ toJson(matrix) }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-
       - name: Run API tests
         id: test_execution
         uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@QA-1607_test_reusable_workflows
@@ -113,207 +111,98 @@ jobs:
           variation: ${{ env.VARIATION }}
           base_ref: ${{ env.BASE_REF }}
           test_type: ui
-  # ui-tests:
-  #   needs:
-  #     - test-controller-ui
-  #   runs-on: ubuntu-latest-m-2
-  #   env:
-  #     XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
-  #     BASE_REF: master
-  #   permissions:
-  #     id-token: write # This is required for requesting the Github JWT
-  #     contents: read # This is required for actions/checkout
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       envfiles: ${{ fromJson(needs.test-controller-ui.outputs.envfiles) }}
-  #       pump: ${{ fromJson(needs.test-controller-ui.outputs.pump) }}
-  #       sink: ${{ fromJson(needs.test-controller-ui.outputs.sink) }}
-  #       exclude:
-  #         - pump: tykio/tyk-pump-docker-pub:v1.8
-  #           sink: $ECR/tyk-sink:master
-  #         - pump: $ECR/tyk-pump:master
-  #           sink: tykio/tyk-mdcb-docker:v2.4
-  #   steps:
-  #     - uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: arn:aws:iam::754489498669:role/ecr_rw_tyk
-  #         role-session-name: cipush
-  #         aws-region: eu-central-1
-  #     - id: ecr
-  #       uses: aws-actions/amazon-ecr-login@v2
-  #       with:
-  #         mask-password: 'true'
-  #     - name: Setup tmate session only in debug mode
-  #       uses: mxschmitt/action-tmate@v3
-  #       if: runner.debug == '1'
-  #       with:
-  #         detached: true
-  #         limit-access-to-actor: true
-  #         # Only ${{ github.actor }} has access
-  #         # See https://github.com/mxschmitt/action-tmate#use-registered-public-ssh-keys
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         path: auto
-  #         fetch-depth: 1
-  #     - name: env up
-  #       shell: bash
-  #       working-directory: auto
-  #       id: env_up
-  #       env:
-  #         pull_policy: 'if_not_present'
-  #         GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
-  #         TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
-  #         TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-  #       run: |
-  #         match_tag=${{steps.ecr.outputs.registry}}/tyk-pro:$BASE_REF
-  #         tags=($match_tag)
-  #         set -eaxo pipefail
-  #         docker run -q --rm -v ~/.docker/config.json:/root/.docker/config.json tykio/gromit policy match ${tags[0]} ${match_tag} 2>versions.env
-  #         echo '# alfa and beta have to come after the override
-
-  #         tyk_image="$ECR/tyk-ee"
-  #         tyk_alfa_image=$tyk_image
-  #         tyk_beta_image=$tyk_image
-  #         ECR=${{steps.ecr.outputs.registry}}
-  #         tyk_pump_image=${{matrix.pump}}
-
-  #         tyk_sink_image=${{matrix.sink}}
-  #         confs_dir=./pro-ha
-  #         env_file=local.env' >> versions.env
-  #         cat ./confs/${{ matrix.envfiles.config }}.env local-${{ matrix.envfiles.db }}.env > local.env
-  #         echo "::group::versions"
-  #         cat versions.env local.env
-  #         echo "::endgroup::"
-  #         # bring up env, the project name is important
-  #         docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile master-datacenter up --quiet-pull -d
-  #         ./dash-bootstrap.sh http://localhost:3000
-  #         docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile slave-datacenter up --quiet-pull -d
-  #         echo "$(cat pytest.env | grep USER_API_SECRET)" >> $GITHUB_OUTPUT
-  #         echo "ts=$(date +%s%N)" >> $GITHUB_OUTPUT
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         repository: TykTechnologies/tyk-analytics
-  #         path: tyk-analytics
-  #         token: ${{ secrets.ORG_GH_TOKEN }}
-  #         fetch-depth: 0
-  #         sparse-checkout: tests/ui
-  #     - name: Choosing test code branch
-  #       working-directory: tyk-analytics/tests/ui
-  #       run: |
-  #         if [[ ${{ github.event_name }} == "pull_request" ]]; then
-  #           PR_BRANCH=${{ github.event.pull_request.head.ref }}
-  #           TARGET_BRANCH=${{ github.event.pull_request.base.ref }}
-  #           echo "Looking for PR_BRANCH:$PR_BRANCH or TARGET_BRANCH:$TARGET_BRANCH..."
-  #           if git rev-parse --verify "origin/$PR_BRANCH" >/dev/null 2>&1; then
-  #             echo "PR branch $PR_BRANCH exists. Checking out..."
-  #             git checkout "$PR_BRANCH"
-  #           elif git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
-  #             echo "Target branch $TARGET_BRANCH exists. Checking out..."
-  #             git checkout "$TARGET_BRANCH"
-  #           fi
-  #         fi
-  #         if [[ ${{ github.event_name }} == "push" ]]; then
-  #           PUSH_BRANCH=${{ github.ref_name }}
-  #           echo "Looking for PUSH_BRANCH:$PUSH_BRANCH..."
-  #           if git rev-parse --verify "origin/$PUSH_BRANCH" >/dev/null 2>&1; then
-  #             echo "Push branch $PUSH_BRANCH exists. Checking out..."
-  #             git checkout "$PUSH_BRANCH"
-  #           fi
-  #         fi
-  #         echo "Current commit: $(git rev-parse HEAD)"
-  #     - name: Install Node.js 18.16
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "18.16"
-  #         cache-dependency-path: tyk-analytics/tests/ui
-  #         cache: 'npm'
-  #     - name: Fix private module deps
-  #       env:
-  #         TOKEN: '${{ secrets.ORG_GH_TOKEN }}'
-  #       run: >
-  #         git config --global url."https://${TOKEN}@github.com".insteadOf "https://github.com"
-  #     - name: Execute UI tests
-  #       working-directory: tyk-analytics/tests/ui
-  #       id: test_execution
-  #       env:
-  #         GW_URL: 'https://localhost:8080/'
-  #         NODE_TLS_REJECT_UNAUTHORIZED: 0
-  #         UI_MARKERS: ${{ matrix.envfiles.uimarkers && format('--grep {0}', matrix.envfiles.uimarkers ) || '' }}
-  #       run: "npm ci\nnpx playwright install --with-deps chromium\nPLAYWRIGHT_JUNIT_OUTPUT_NAME=${XUNIT_REPORT_PATH} npx playwright test --project=chromium --reporter=junit,html $UI_MARKERS \n"
-  #     - name: Upload Playwright Test Report to S3
-  #       if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
-  #       run: npm run upload_report_to_s3
-  #       env:
-  #         AWS_ACCESS_KEY_ID: ${{ secrets.UI_AWS_ACCESS_KEY_ID }}
-  #         AWS_SECRET_ACCESS_KEY: ${{ secrets.UI_AWS_SECRET_ACCESS_KEY }}
-  #         RUN_ID: 'tyk-analytics/${{ github.run_id }}'
-  #       working-directory: tyk-analytics/tests/ui
-  #     - name: Share S3 report link into summary
-  #       if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
-  #       run: |
-  #         echo "# :clipboard: S3 UI Test REPORT: ${{ matrix.envfiles.db }}-${{ matrix.envfiles.conf }}" >> $GITHUB_STEP_SUMMARY
-  #         echo "- Status: ${{ steps.test_execution.outcome == 'success' && ':white_check_mark:' || ':no_entry_sign:' }}" >> $GITHUB_STEP_SUMMARY
-  #         echo "- [Link to report](https://tyk-qa-reports.s3.eu-central-1.amazonaws.com/tyk-analytics/${{ github.run_id }}/index.html)" >> $GITHUB_STEP_SUMMARY
-  #     - name: Generate metadata and upload test reports
-  #       id: metadata_report
-  #       if: always() && (steps.test_execution.conclusion != 'skipped')
-  #       env:
-  #         REPORT_NAME: ${{ github.repository }}_${{ github.run_id }}_${{ github.run_attempt }}-${{steps.env_up.outputs.ts}}
-  #         METADATA_REPORT_PATH: metadata.toml
-  #       run: |
-  #         # Generate metadata report
-  #         set -eo pipefail
-  #         echo "[metadata]
-  #         repo = ${{ github.repository }}
-  #         branch = ${{ github.ref }}
-  #         commit = ${{ github.sha }}
-  #         test_suite_version = $BASE_REF
-  #         test_suite_name = ${{ github.job }}
-  #         test_suite_run = ${{ github.run_id }}-${{ github.run_attempt }}
-  #         db = ${{ matrix.envfiles.db }}
-  #         conf = ${{ matrix.envfiles.config }}
-  #         cache = ${{ matrix.envfiles.cache }}
-  #         pump_compatibility = ${{ matrix.pump }}
-  #         sink_compatibility = ${{ matrix.sink }}
-  #         " | tee ${METADATA_REPORT_PATH}
-  #         aws s3 cp ${XUNIT_REPORT_PATH}  s3://assets.dev.tyk.technology/testreports/${REPORT_NAME#*/}.xml
-  #         aws s3 cp ${METADATA_REPORT_PATH} s3://assets.dev.tyk.technology/testreports/${REPORT_NAME#*/}.metadata.toml
-  #     - name: Docker logs for all components
-  #       if: failure() && (steps.test_execution.outcome != 'success' || steps.env_up.outcome != 'success')
-  #       working-directory: auto
-  #       env:
-  #         pull_policy: 'if_not_present'
-  #         GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
-  #         TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
-  #         TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
-  #         ECR: ${{ steps.ecr.outputs.registry }}
-  #       run: |
-  #         docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${{ matrix.envfiles.db }}.yml -f ${{ matrix.envfiles.cache }}.yml --env-file versions.env --profile all logs | sort > ${{ github.workspace }}/docker-compose.log
-  #         echo "::group::DockerLogs"
-  #         cat ${{ github.workspace }}/docker-compose.log
-  #         echo "::endgroup::"
-  #     - name: Upload compose logs
-  #       uses: actions/upload-artifact@v4
-  #       if: failure() && (steps.test_execution.outcome != 'success' || steps.env_up.outcome != 'success')
-  #       with:
-  #         name: docker-compose-logs-${{ github.job }}-${{ matrix.envfiles.db }}-${{ matrix.envfiles.conf }}-${{ github.run_id }}
-  #         path: ${{ github.workspace }}/docker-compose.log
-  #         retention-days: 3
-  #         overwrite: true
-  # release:
-  #   if: ${{ startsWith(github.ref, 'refs/tags') }}
-  #   runs-on: ubuntu-latest-m-2
-  #   needs:
-  #     - api-tests
-  #     - ui-tests
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: softprops/action-gh-release@v1
-  #       with:
-  #         token: ${{ secrets.ORG_GH_TOKEN }}
-  #         name: ${{ github.ref_name }}
-  #         tag_name: ${{ github.ref_name }}
-  #         body_path: release.md
+  ui-tests:
+    needs:
+      - test-controller-ui
+    runs-on: ubuntu-latest-m-2
+    env:
+      XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
+      BASE_REF: master
+      MATRIX: ${{ toJson(matrix) }}
+    permissions:
+      id-token: write # This is required for requesting the Github JWT
+      contents: read # This is required for actions/checkout
+    strategy:
+      fail-fast: false
+      matrix:
+        envfiles: ${{ fromJson(needs.test-controller-ui.outputs.envfiles) }}
+        pump: ${{ fromJson(needs.test-controller-ui.outputs.pump) }}
+        sink: ${{ fromJson(needs.test-controller-ui.outputs.sink) }}
+        exclude:
+          - pump: tykio/tyk-pump-docker-pub:v1.8
+            sink: $ECR/tyk-sink:master
+          - pump: $ECR/tyk-pump:master
+            sink: tykio/tyk-mdcb-docker:v2.4
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::754489498669:role/ecr_rw_tyk
+          role-session-name: cipush
+          aws-region: eu-central-1
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: 'true'
+      - name: Setup tmate session only in debug mode
+        uses: mxschmitt/action-tmate@v3
+        if: runner.debug == '1'
+        with:
+          detached: true
+          limit-access-to-actor: true
+          # Only ${{ github.actor }} has access
+          # See https://github.com/mxschmitt/action-tmate#use-registered-public-ssh-keys
+      - uses: actions/checkout@v4
+        with:
+          path: auto
+          fetch-depth: 1
+      - name: env up
+        id: env_up
+        uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
+        with:
+          base_ref: ${{ env.BASE_REF }}
+          tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
+          github_token: ${{ secrets.ORG_GH_TOKEN }}
+          matrix: ${{ toJson(matrix) }}
+          TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
+          TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
+      - name: Checkout test code
+        uses: TykTechnologies/github-actions/.github/actions/tests/choose-test-branch@QA-1607_test_reusable_workflows
+        with:
+          org_gh_token: ${{ secrets.ORG_GH_TOKEN }}
+          test_folder: ui
+      - name: Fix private module deps
+        env:
+          TOKEN: '${{ secrets.ORG_GH_TOKEN }}'
+        run: >
+          git config --global url."https://${TOKEN}@github.com".insteadOf "https://github.com"
+      - name: Execute UI tests
+        uses: TykTechnologies/github-actions/.github/actions/tests/ui-tests@QA-1607_test_reusable_workflows
+        id: test_execution
+        with:
+          ui_markers: ${{ matrix.envfiles.uimarkers }}
+      - name: Upload report to S3
+        if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
+        uses: TykTechnologies/github-actions/.github/actions/tests/ui-tests-report@QA-1607_test_reusable_workflows
+        with:
+          matrix: ${{ toJson(matrix) }}
+          aws_acces_key_id: ${{ secrets.UI_AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.UI_AWS_SECRET_ACCESS_KEY }}
+      - name: Reporting
+        if: always()
+        uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags') }}
+    runs-on: ubuntu-latest-m-2
+    needs:
+      - api-tests
+      - ui-tests
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.ORG_GH_TOKEN }}
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body_path: release.md
