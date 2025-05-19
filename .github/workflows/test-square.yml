@@ -23,14 +23,11 @@ jobs:
     steps:
       - name: set params
         id: params
-        shell: bash
-        run: |
-          set -eo pipefail
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/api.gho" | tee -a "$GITHUB_OUTPUT"
-          if ! [[ $VARIATION =~ prod ]] ;then
-              echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
-              echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-api" >> $GITHUB_STEP_SUMMARY
-          fi
+        uses: TykTechnologies/github-actions/.github/actions/tests/test-controller@QA-1607_test_reusable_workflows
+        with:
+          variation: ${{ env.VARIATION }}
+          base_ref: ${{ env.BASE_REF }}
+          test_type: api
   api-tests:
     needs:
       - test-controller-api
@@ -111,14 +108,11 @@ jobs:
     steps:
       - name: set params
         id: params
-        shell: bash
-        run: |
-          set -eo pipefail
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/ui.gho" | tee -a "$GITHUB_OUTPUT"
-          if ! [[ $VARIATION =~ prod ]] ;then
-              echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
-              echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-ui" >> $GITHUB_STEP_SUMMARY
-          fi
+        uses: TykTechnologies/github-actions/.github/actions/tests/test-controller@QA-1607_test_reusable_workflows
+        with:
+          variation: ${{ env.VARIATION }}
+          base_ref: ${{ env.BASE_REF }}
+          test_type: ui
   # ui-tests:
   #   needs:
   #     - test-controller-ui
