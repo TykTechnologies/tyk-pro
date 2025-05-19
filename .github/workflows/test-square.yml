@@ -78,8 +78,8 @@ jobs:
         id: env_up
         uses: TykTechnologies/github-actions/.github/actions/tests/env-up@QA-1607_test_reusable_workflows
         with:
-          base_ref: $BASE_REF
-          tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:$BASE_REF'}}
+          base_ref: ${{ env.BASE_REF }}
+          tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
           matrix: ${{ toJson(matrix) }}
       - uses: actions/checkout@v4
