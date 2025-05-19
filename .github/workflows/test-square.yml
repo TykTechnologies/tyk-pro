@@ -120,6 +120,7 @@ jobs:
           user_api_secret: ${{ steps.env_up.outputs.USER_API_SECRET}}
           api_markers: ${{ matrix.envfiles.apimarkers }}
       - name: Reporting
+        if: always()
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
 
   test-controller-ui:
