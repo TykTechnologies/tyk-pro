@@ -83,7 +83,6 @@ jobs:
           base_ref: ${{ env.BASE_REF }}
           tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
-          matrix: ${{ toJson(matrix) }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
       - name: Run API tests
@@ -94,6 +93,8 @@ jobs:
           api_markers: ${{ matrix.envfiles.apimarkers }}
       - name: Reporting
         if: always()
+        env:
+          execution_status: ${{ steps.test_execution.outcome }}
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
 
   test-controller-ui:
@@ -189,6 +190,8 @@ jobs:
           aws_secret_access_key: ${{ secrets.UI_AWS_SECRET_ACCESS_KEY }}
       - name: Reporting
         if: always()
+        env:
+          execution_status: ${{ steps.test_execution.outcome }}
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
   release:
     if: ${{ startsWith(github.ref, 'refs/tags') }}
