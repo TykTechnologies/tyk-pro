@@ -90,7 +90,6 @@ jobs:
         uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@QA-1607_test_reusable_workflows
         with:
           user_api_secret: ${{ steps.env_up.outputs.USER_API_SECRET}}
-          api_markers: ${{ matrix.envfiles.apimarkers }}
       - name: Reporting
         if: always()
         env:
@@ -163,7 +162,6 @@ jobs:
           base_ref: ${{ env.BASE_REF }}
           tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
-          matrix: ${{ toJson(matrix) }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
       - name: Checkout test code
@@ -179,18 +177,15 @@ jobs:
       - name: Execute UI tests
         uses: TykTechnologies/github-actions/.github/actions/tests/ui-tests@QA-1607_test_reusable_workflows
         id: test_execution
-        with:
-          ui_markers: ${{ matrix.envfiles.uimarkers }}
       - name: Upload report to S3
         if: failure() && steps.test_execution.outcome != 'success' && steps.env_up.outcome == 'success'
         uses: TykTechnologies/github-actions/.github/actions/tests/ui-tests-report@QA-1607_test_reusable_workflows
         with:
-          matrix: ${{ toJson(matrix) }}
           aws_acces_key_id: ${{ secrets.UI_AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.UI_AWS_SECRET_ACCESS_KEY }}
       - name: Reporting
         if: always()
-        env:
+        with:
           execution_status: ${{ steps.test_execution.outcome }}
         uses: TykTechnologies/github-actions/.github/actions/tests/reporting@QA-1607_test_reusable_workflows
   release:
