@@ -83,8 +83,8 @@ jobs:
           base_ref: ${{ env.BASE_REF }}
           tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
-          pump-image: ${{ matrix.pump }}
-          sink-image: ${{ matrix.sink }}
+          pump_image: ${{ matrix.pump }}
+          sink_image: ${{ matrix.sink }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
       - name: Run API tests
@@ -164,6 +164,8 @@ jobs:
           base_ref: ${{ env.BASE_REF }}
           tags: ${{'754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-ee:'}}${{env.BASE_REF}}
           github_token: ${{ secrets.ORG_GH_TOKEN }}
+          pump_image: ${{ matrix.pump }}
+          sink_image: ${{ matrix.sink }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
       - name: Checkout test code
