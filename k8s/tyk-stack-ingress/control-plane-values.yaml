@@ -263,7 +263,7 @@ tyk-gateway:
 
   gateway:
     # The hostname to bind the Gateway to.
-    hostName: &gwHostName tyk-gw.local
+    hostName: &gwHostName chart-gw.local
 
     # EnableFixedWindowRateLimiter enables fixed window rate limiting.
     # FixedWindow will allow requests up to the configured rate limit,
@@ -1382,7 +1382,7 @@ tyk-dashboard:
     extraVolumeMounts: []
 
     # The hostname to bind the Dashboard to.
-    hostName: tyk-dashboard.local
+    hostName: chart-dashboard.local
 
     tls:
       # The name of the secret which should contain the TLS certificate you want to use with the dashboard deployment
