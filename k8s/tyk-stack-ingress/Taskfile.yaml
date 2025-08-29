@@ -1,0 +1,73 @@
+---
+version: "3"
+
+tasks:
+  create-cluster:
+    desc: Creates a Kind Kubernetes cluster with port mappings for ingress
+    cmds:
+      - ./create-cluster.sh
+
+  deploy:
+    desc: Deploys Tyk control plane and data plane in the Kubernetes cluster
+    cmds:
+      - ./run-tyk-cp-dp.sh
+
+  get-dp-secret:
+    desc: Gets the tyk-data-plane-secret from the tyk-dp namespace in human-readable format
+    cmds:
+      - |
+        echo "=== Tyk Data Plane Secret ==="
+        echo "API Secret: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.APISecret}' | base64 --decode)"
+        echo "Group ID: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.groupID}' | base64 --decode)"
+        echo "Org ID: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.orgId}' | base64 --decode)"
+        echo "User API Key: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.userApiKey}' | base64 --decode)"
+        echo "==========================="
+
+  start-port-forward:
+    desc: Port-forwards all Tyk services and saves logs to a file
+    cmds:
+      - |
+        LOG_FILE="tyk-port-forward.log"
+        echo "Starting port-forwarding for all Tyk services. Logs will be saved to $LOG_FILE"
+        echo "Starting port-forwarding at $(date)" > $LOG_FILE
+        
+        # Start port-forwarding for Dashboard
+        echo "Starting port-forward for Dashboard on localhost:3000..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/dashboard-svc-tyk-control-plane-tyk-dashboard 3000:3000 >> $LOG_FILE 2>&1 &
+        DASHBOARD_PID=$!
+        echo "Dashboard port-forward started with PID $DASHBOARD_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for MDCB
+        echo "Starting port-forward for MDCB on localhost:9091..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/mdcb-svc-tyk-control-plane-tyk-mdcb 9091:9091 >> $LOG_FILE 2>&1 &
+        MDCB_PID=$!
+        echo "MDCB port-forward started with PID $MDCB_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for Control Plane Gateway
+        echo "Starting port-forward for Control Plane Gateway on localhost:8080..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/gateway-svc-tyk-control-plane-tyk-gateway 8080:8080 >> $LOG_FILE 2>&1 &
+        CP_GW_PID=$!
+        echo "Control Plane Gateway port-forward started with PID $CP_GW_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for Data Plane Gateway
+        echo "Starting port-forward for Data Plane Gateway on localhost:8081..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk-dp svc/gateway-svc-tyk-data-plane-tyk-gateway 8081:8080 >> $LOG_FILE 2>&1 &
+        DP_GW_PID=$!
+        echo "Data Plane Gateway port-forward started with PID $DP_GW_PID" | tee -a $LOG_FILE
+        
+        echo "All port-forwards started. PIDs: $DASHBOARD_PID $MDCB_PID $CP_GW_PID $DP_GW_PID" | tee -a $LOG_FILE
+        echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward" | tee -a $LOG_FILE
+        echo "Logs are being saved to $LOG_FILE"
+
+  stop-port-forward:
+    desc: Stops all kubectl port-forward processes
+    cmds:
+      - |
+        echo "Stopping all kubectl port-forward processes..."
+        pkill -f "kubectl port-forward" || echo "No port-forward processes found"
+        echo "All port-forward processes stopped"
+
+  clean:
+    desc: Deletes all Tyk namespaces and resources from the Kubernetes cluster
+    cmds:
+      - kubectl delete namespace tyk tyk-dp

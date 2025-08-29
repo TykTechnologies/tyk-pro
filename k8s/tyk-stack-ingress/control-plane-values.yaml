@@ -73,7 +73,7 @@ global:
     # APISecret sets node_secret and secret in tyk.conf
     # tyk_analytics.conf tyk_api_config.secret
     # tyk_analytics.conf shared_node_secret
-    APISecret: CHANGEME
+    APISecret: "352d20ee67be67f6340b4c0605b044b7"
     # tyk_analytics.conf admin_secret
     # tib.conf TykAPISettings.GatewayConfig.AdminSecret
     # tib.conf TykAPISettings.DashboardConfig.AdminSecret
@@ -221,7 +221,7 @@ global:
     #   keyName: ""
 
   # Choose the storageType for Tyk. [ "mongo", "postgres" ]
-  storageType: &globalStorageType postgres
+  storageType: &globalStorageType mongo
 
   mdcbSynchronizer:
     # Enable the MDCB Synchroniser
@@ -1451,7 +1451,6 @@ tyk-mdcb:
     # Tyk MDCB license
     # It is used to set TYK_MDCB_LICENSE
     license: ""
-
     # The rpc port which worker gateways will connect to.
     # This opens a port on MDCB container and MDCB service targets this port.
     # It is used to set TYK_MDCB_LISTENPORT
