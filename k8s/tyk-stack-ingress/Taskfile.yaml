@@ -67,6 +67,35 @@ tasks:
         pkill -f "kubectl port-forward" || echo "No port-forward processes found"
         echo "All port-forward processes stopped"
 
+  deploy-toxiproxy:
+    desc: Deploys Toxiproxy to the Kubernetes cluster
+    cmds:
+      - kubectl apply -f toxiproxy.yaml
+
+  start-toxiproxy-forward:
+    desc: Port-forwards the Toxiproxy API and all proxies to localhost
+    cmds:
+      - |
+        LOG_FILE="toxiproxy-port-forward.log"
+        echo "Starting port-forwarding for Toxiproxy. Logs will be saved to $LOG_FILE"
+        echo "Starting port-forwarding at $(date)" > $LOG_FILE
+        
+        # Port-forward all Toxiproxy ports
+        echo "Starting port-forward for Toxiproxy API on localhost:8474..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/toxiproxy 8474:8474 8475:8475 8476:8476 8477:8477 8478:8478 8479:8479 8480:8480 >> $LOG_FILE 2>&1 &
+        TOXIPROXY_PID=$!
+        echo "Toxiproxy port-forward started with PID $TOXIPROXY_PID" | tee -a $LOG_FILE
+        echo "Toxiproxy API available at: http://localhost:8474"
+        echo "Proxied services:"
+        echo "  - ToxiProxy: localhost:8474"
+        echo "  - Control Plane Gateway: localhost:8475"
+        echo "  - Data Plane Gateway: localhost:8476"
+        echo "  - MDCB: localhost:8477"
+        echo "  - Control Plane Redis: localhost:8478"
+        echo "  - Data Plane Redis: localhost:8479"
+        echo "  - MongoDB: localhost:8480"
+        echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward"
+
   clean:
     desc: Deletes all Tyk namespaces and resources from the Kubernetes cluster
     cmds:
