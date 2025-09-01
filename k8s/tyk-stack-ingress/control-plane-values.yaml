@@ -100,6 +100,7 @@ global:
     #
     # Default value: redis.{{ .Release.Namespace }}.svc:6379
     # addrs:
+    #   - toxiproxy.tyk.svc:6379
     #   Example using tyk simple redis chart
     #   - redis.tyk.svc:6379
     #   Example using bitnami/redis
@@ -279,7 +280,7 @@ tyk-gateway:
       # Tyk Dashboard runs with custom service name, for instance; using `fullnameOverride` in `tyk-dashboard` section.
       # The URL needs to be formatted as: http://dashboard_host:port
       # It is used to set TYK_GW_DBAPPCONFOPTIONS_CONNECTIONSTRING
-      dashboardConnectionString: ""
+      dashboardConnectionString: "http://dashboard-svc-tyk-control-plane-tyk-dashboard:3000"
 
       # This option is required if Policy source is set to Tyk Dashboard (`service`) if and only if
       # Tyk Dashboard runs with custom service name, for instance; using `fullnameOverride` in `tyk-dashboard` section.

@@ -28,7 +28,7 @@ global:
 
     enabled: true
     # connection string used to connect to an MDCB deployment. For Tyk Cloud users, you can get it from Tyk Cloud Console and retrieve the MDCB connection string.
-    connectionString: "mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
+    connectionString: ""
     # orgID of your dashboard user
     # orgId: ""
     # # API key of your dashboard user
@@ -79,7 +79,7 @@ global:
     #
     # Default value: redis.{{ .Release.Namespace }}.svc:6379
     addrs:
-      - redis.tyk-dp.svc:6379
+      - toxiproxy.tyk.svc:8379
     # Example using tyk simple redis chart
     #   - redis.tyk.svc:6379
     # Example using bitnami/redis

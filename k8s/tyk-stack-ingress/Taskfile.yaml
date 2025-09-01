@@ -12,6 +12,11 @@ tasks:
     cmds:
       - ./run-tyk-cp-dp.sh
 
+  deploy-with-toxiproxy:
+    desc: Deploys Tyk control plane and data plane with Toxiproxy for network simulation
+    cmds:
+      - ./run-tyk-cp-dp.sh true
+
   get-dp-secret:
     desc: Gets the tyk-data-plane-secret from the tyk-dp namespace in human-readable format
     cmds:
@@ -67,11 +72,6 @@ tasks:
         pkill -f "kubectl port-forward" || echo "No port-forward processes found"
         echo "All port-forward processes stopped"
 
-  deploy-toxiproxy:
-    desc: Deploys Toxiproxy to the Kubernetes cluster
-    cmds:
-      - kubectl apply -f toxiproxy.yaml
-
   start-toxiproxy-forward:
     desc: Port-forwards the Toxiproxy API and all proxies to localhost
     cmds:
@@ -87,7 +87,7 @@ tasks:
         echo "Toxiproxy port-forward started with PID $TOXIPROXY_PID" | tee -a $LOG_FILE
         echo "Toxiproxy API available at: http://localhost:8474"
         echo "Proxied services:"
-        echo "  - ToxiProxy: localhost:8474"
+        echo "  - Dashboard: localhost:8474"
         echo "  - Control Plane Gateway: localhost:8475"
         echo "  - Data Plane Gateway: localhost:8476"
         echo "  - MDCB: localhost:8477"
