@@ -43,11 +43,11 @@ global:
   mdcbSynchronizer:
     # Enable the MDCB Synchroniser
     # It is used to set TYK_GW_SLAVEOPTIONS_SYNCHRONISERENABLED in Tyk Gateway deployment.
-    enabled: false
+    enabled: true
     # keySpaceSyncInterval configures the interval (in seconds) that the worker Gateway will
     # take to check if there are any changes.
     # It is used to set TYK_GW_SLAVEOPTIONS_KEYSPACESYNCINTERVAL in Tyk Gateway deployment.
-    keySpaceSyncInterval: 10
+    keySpaceSyncInterval: 1
 
   tls:
     # When true, sets the gateway protocol to HTTPS.
@@ -78,8 +78,8 @@ global:
     # the endpoints of the redis instances or use the cluster configuration endpoint.
     #
     # Default value: redis.{{ .Release.Namespace }}.svc:6379
-    addrs:
-      - toxiproxy.tyk.svc:8379
+    # addrs:
+    #   - toxiproxy.tyk.svc:8379
     # Example using tyk simple redis chart
     #   - redis.tyk.svc:6379
     # Example using bitnami/redis
@@ -190,7 +190,7 @@ tyk-gateway:
 
   gateway:
     # The hostname to bind the Gateway to.
-    hostName: tyk-gw.local
+    hostName: tyk-gw-dp.local
 
     # EnableFixedWindowRateLimiter enables fixed window rate limiting.
     # FixedWindow will allow requests up to the configured rate limit,
@@ -229,7 +229,7 @@ tyk-gateway:
     podLabels: {}
 
     # replicaCount specifies number of replicas to be created if kind is Deployment.
-    replicaCount: 1
+    replicaCount: 2
 
     # autoscaling configuration if kind IS NOT DaemonSet
     autoscaling: {}
@@ -329,7 +329,7 @@ tyk-gateway:
       # Create an ingress object for control API of Tyk Gateway
       ingress:
         # if enabled, creates an ingress resource for the gateway control
-        enabled: false
+        enabled: true
 
         # specify ingress controller class name
         className: ""
@@ -342,7 +342,7 @@ tyk-gateway:
           - host: chart-example-control-api-domain.local
             paths:
               - path: /
-                pathType: ImplementationSpecific
+                pathType: Prefix
 
         # tls configuration for ingress
         #  - secretName: chart-example-tls
@@ -354,7 +354,7 @@ tyk-gateway:
     # annotation to that ingress controller.
     ingress:
       # if enabled, creates an ingress resource for the gateway
-      enabled: false
+      enabled: true
 
       # specify ingress controller class name
       className: ""
@@ -364,10 +364,10 @@ tyk-gateway:
 
       # ingress rules
       hosts:
-        - host: chart-example.local
+        - host: chart-gw-dp.local
           paths:
             - path: /
-              pathType: ImplementationSpecific
+              pathType: Prefix
 
       # tls configuration for ingress
       #  - secretName: chart-example-tls
@@ -475,7 +475,11 @@ tyk-gateway:
     # extraEnvs is used to set gateway env variables
     # - name: TYK_GW_HTTPSERVEROPTIONS_SSLINSECURESKIPVERIFY
     #   value: "true"
-    extraEnvs: []
+    extraEnvs:
+      - name: TYK_GW_SLAVEOPTIONS_KEYSPACESYNCINTERVAL
+        value: "1"
+      - name: TYK_GW_SLAVEOPTIONS_SYNCHRONISERENABLED
+        value: "true" 
 
     # Sharding gateway allows you to selectively load APIs to specific gateways.
     # Also be sure to match API segmentation tags with the tags selected below.

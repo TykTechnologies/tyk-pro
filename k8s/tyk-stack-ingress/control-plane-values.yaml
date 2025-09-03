@@ -227,7 +227,7 @@ global:
   mdcbSynchronizer:
     # Enable the MDCB Synchroniser
     # It will be used to set TYK_MDCB_SYNCWORKER_ENABLED to true in Tyk MDCB deployment.
-    enabled: false
+    enabled: true
 
   mtls:
     # Sets the AES256 secret which is used to encode certificate private keys when
