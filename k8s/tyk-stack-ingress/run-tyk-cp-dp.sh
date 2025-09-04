@@ -3,8 +3,14 @@ if [ -f .env ]; then
     source .env
 fi
 
-# Check if we should use Toxiproxy
-USE_TOXIPROXY=${1:-"false"}
+# Parse named parameters
+USE_TOXIPROXY="false"
+for param in "$@"; do
+    if [[ "$param" == "toxiproxy="* ]]; then
+        USE_TOXIPROXY="${param#*=}"
+    fi
+done
+
 if [ "$USE_TOXIPROXY" = "true" ]; then
     echo "Deploying with Toxiproxy enabled"
 else

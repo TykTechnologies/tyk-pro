@@ -15,7 +15,7 @@ tasks:
   deploy-with-toxiproxy:
     desc: Deploys Tyk control plane and data plane with Toxiproxy for network simulation
     cmds:
-      - ./run-tyk-cp-dp.sh true
+      - ./run-tyk-cp-dp.sh toxiproxy=true
 
   get-dp-secret:
     desc: Gets the tyk-data-plane-secret from the tyk-dp namespace in human-readable format
