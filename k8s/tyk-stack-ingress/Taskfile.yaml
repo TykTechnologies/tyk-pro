@@ -99,4 +99,4 @@ tasks:
   clean:
     desc: Deletes all Tyk namespaces and resources from the Kubernetes cluster
     cmds:
-      - kubectl delete namespace tyk tyk-dp
+      - kubectl delete namespace tyk tyk-dp-1 tyk-dp-2

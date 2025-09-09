@@ -25,12 +25,11 @@ else
     export MONGO_URL="mongodb://mongo.tyk.svc:27017/tyk_analytics"
     export DASHBOARD_URL="dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000"
     export MDCB_CONNECTIONSTRING="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
-    export DP_REDIS_URL="redis.tyk-dp.svc:6379"
+    export DP_REDIS_URL="redis.tyk-dp-1.svc:6379"
 fi
 
-# Create namespaces
+# Create namespace
 kubectl create namespace tyk
-kubectl create namespace tyk-dp
 
 echo "Installing ingress-nginx"
 kubectl apply -f nginx.yml --wait
@@ -120,33 +119,35 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "----- Installing Redis for data plane -----"
-helm install redis tyk-helm/simple-redis -n tyk-dp --wait
-if [ $? -ne 0 ]; then
-    echo "Failed to install Redis for data plane"
-    exit 1
-fi
-
 # Get the Organization ID and API secret
 export ORG_ID=$(kubectl get secret --namespace tyk tyk-operator-conf -o jsonpath="{.data.TYK_ORG}" | base64 --decode)
 export USER_API_KEY=$(kubectl get secret --namespace tyk tyk-operator-conf -o jsonpath="{.data.TYK_AUTH}" | base64 --decode)
 
-echo "----- Creating secret for data plane -----"
-# Create a secret with all the necessary data for the data plane
-kubectl -n tyk-dp create secret generic tyk-data-plane-secret \
-    --from-literal=orgId="$ORG_ID" \
-    --from-literal=userApiKey="$USER_API_KEY" \
-    --from-literal=groupID="data-plane-1" \
-    --from-literal=APISecret="352d20ee67be67f6340b4c0605b044b7"
+echo "----- Creating secret for data plane in tyk namespace -----"
 
-echo "----- Installing tyk-data-plane in tyk-dp namespace -----"
-helm -n tyk-dp install tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
-    --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
-    --set global.secrets.useSecretName="tyk-data-plane-secret" \
-    --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-    --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
-    --set global.redis.addrs[0]="$DP_REDIS_URL" \
-    --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" --wait
+# Install data planes in a loop
+for i in 1 2; do
+    echo "----- Installing tyk-data-plane in tyk-dp-${i} namespace -----"
+    kubectl create namespace tyk-dp-${i}
+    kubectl -n tyk-dp-${i} create secret generic tyk-data-plane-secret \
+        --from-literal=orgId="$ORG_ID" \
+        --from-literal=userApiKey="$USER_API_KEY" \
+        --from-literal=groupID="data-plane-${i}" \
+    helm install redis tyk-helm/simple-redis -n tyk-dp-${i} --wait
+    if [ $? -ne 0 ]; then
+        echo "Failed to install Redis for data plane"
+        exit 1
+    fi
+    helm -n tyk-dp-${i} install tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
+        --set tyk-gateway.gateway.replicaCount=${i} \
+        --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
+        --set global.secrets.useSecretName="tyk-data-plane-secret" \
+        --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
+        --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
+        --set global.redis.addrs[0]="$DP_REDIS_URL" \
+        --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" \
+        --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.local" --wait
+done
 
 if [ $? -ne 0 ]; then
     echo "Failed to install tyk-data-plane"
