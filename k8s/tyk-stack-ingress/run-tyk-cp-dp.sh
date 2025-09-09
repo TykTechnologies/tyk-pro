@@ -13,8 +13,19 @@ done
 
 if [ "$USE_TOXIPROXY" = "true" ]; then
     echo "Deploying with Toxiproxy enabled"
+    # Set Toxiproxy-specific environment variables
+    export REDIS_URL="toxiproxy.tyk.svc:6379"
+    export MONGO_URL="mongodb://toxiproxy.tyk.svc:27017/tyk_analytics"
+    export DASHBOARD_URL="toxiproxy.tyk.svc:3000"
+    export MDCB_CONNECTIONSTRING="toxiproxy.tyk.svc:9091"
+    export DP_REDIS_URL="toxiproxy.tyk.svc:8379"
 else
     echo "Deploying without Toxiproxy"
+    export REDIS_URL="redis.tyk.svc:6379"
+    export MONGO_URL="mongodb://mongo.tyk.svc:27017/tyk_analytics"
+    export DASHBOARD_URL="tyk-dashboard.tyk.svc:3000"
+    export MDCB_CONNECTIONSTRING="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
+    export DP_REDIS_URL="redis.tyk-dp.svc:6379"
 fi
 
 # Create namespaces
@@ -92,30 +103,17 @@ kubectl wait --namespace tyk \
 echo "----- Installing tyk-control-plane -----"
 echo "Using Repo: $IMAGE_REPO Gateway: $GW_IMAGE_TAG, Dashboard: $DASH_IMAGE_TAG"
 
-# Install control plane with or without Toxiproxy
-if [ "$USE_TOXIPROXY" = "true" ]; then
-    # Install with Toxiproxy
-    helm -n tyk install tyk-control-plane tyk-helm/tyk-control-plane -f ./control-plane-values.yaml \
-        --set global.license.dashboard="$TYK_DB_LICENSEKEY" \
-        --set global.storageType="mongo" \
-        --set tyk-mdcb.mdcb.license="$TYK_MDCB_LICENSEKEY" \
-        --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-        --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
-        --set tyk-dashboard.dashboard.image.repository="$IMAGE_REPO/$DASH_IMAGE_NAME" \
-        --set tyk-dashboard.dashboard.image.tag="$DASH_IMAGE_TAG" \
-        --set global.redis.addrs[0]="toxiproxy.tyk.svc:6379" \
-        --set global.mongo.mongoURL="mongodb://toxiproxy.tyk.svc:27017/tyk_analytics" --wait
-else
-    # Install without Toxiproxy
-    helm -n tyk install tyk-control-plane tyk-helm/tyk-control-plane -f ./control-plane-values.yaml \
-        --set global.license.dashboard="$TYK_DB_LICENSEKEY" \
-        --set global.storageType="mongo" \
-        --set tyk-mdcb.mdcb.license="$TYK_MDCB_LICENSEKEY" \
-        --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-        --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
-        --set tyk-dashboard.dashboard.image.repository="$IMAGE_REPO/$DASH_IMAGE_NAME" \
-        --set tyk-dashboard.dashboard.image.tag="$DASH_IMAGE_TAG" --wait
-fi
+helm -n tyk install tyk-control-plane tyk-helm/tyk-control-plane -f ./control-plane-values.yaml \
+    --set global.license.dashboard="$TYK_DB_LICENSEKEY" \
+    --set global.storageType="mongo" \
+    --set tyk-mdcb.mdcb.license="$TYK_MDCB_LICENSEKEY" \
+    --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
+    --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
+    --set tyk-dashboard.dashboard.image.repository="$IMAGE_REPO/$DASH_IMAGE_NAME" \
+    --set tyk-dashboard.dashboard.image.tag="$DASH_IMAGE_TAG" \
+    --set global.redis.addrs[0]="$REDIS_URL" \
+    --set global.mongo.mongoURL="$MONGO_URL" \
+    --set tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString="$DASHBOARD_URL" --wait
 
 if [ $? -ne 0 ]; then
     echo "Failed to install tyk-control-plane"
@@ -142,25 +140,13 @@ kubectl -n tyk-dp create secret generic tyk-data-plane-secret \
     --from-literal=APISecret="352d20ee67be67f6340b4c0605b044b7"
 
 echo "----- Installing tyk-data-plane in tyk-dp namespace -----"
-if [ "$USE_TOXIPROXY" = "true" ]; then
-    # Install with Toxiproxy
-    helm -n tyk-dp install tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
-        --set global.redis.addrs[0]="toxiproxy.tyk.svc:8379" \
-        --set global.remoteControlPlane.connectionString="toxiproxy.tyk.svc:9091" \
-        --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
-        --set global.secrets.useSecretName="tyk-data-plane-secret" \
-        --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-        --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" --wait
-else
-    # Install without Toxiproxy
-    helm -n tyk-dp install tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
-        --set global.redis.addrs[0]="redis.tyk-dp.svc:6379" \
-        --set global.remoteControlPlane.connectionString="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091" \
-        --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
-        --set global.secrets.useSecretName="tyk-data-plane-secret" \
-        --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-        --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" --wait
-fi
+helm -n tyk-dp install tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
+    --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
+    --set global.secrets.useSecretName="tyk-data-plane-secret" \
+    --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
+    --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
+    --set global.redis.addrs[0]="$DP_REDIS_URL" \
+    --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" --wait
 
 if [ $? -ne 0 ]; then
     echo "Failed to install tyk-data-plane"

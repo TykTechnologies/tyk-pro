@@ -280,7 +280,7 @@ tyk-gateway:
       # Tyk Dashboard runs with custom service name, for instance; using `fullnameOverride` in `tyk-dashboard` section.
       # The URL needs to be formatted as: http://dashboard_host:port
       # It is used to set TYK_GW_DBAPPCONFOPTIONS_CONNECTIONSTRING
-      dashboardConnectionString: "http://dashboard-svc-tyk-control-plane-tyk-dashboard:3000"
+      dashboardConnectionString: ""
 
       # This option is required if Policy source is set to Tyk Dashboard (`service`) if and only if
       # Tyk Dashboard runs with custom service name, for instance; using `fullnameOverride` in `tyk-dashboard` section.
