@@ -132,7 +132,7 @@ for i in 1 2; do
     kubectl -n tyk-dp-${i} create secret generic tyk-data-plane-secret \
         --from-literal=orgId="$ORG_ID" \
         --from-literal=userApiKey="$USER_API_KEY" \
-        --from-literal=groupID="data-plane-${i}" \
+        --from-literal=groupID="data-plane-${i}"
     helm install redis tyk-helm/simple-redis -n tyk-dp-${i} --wait
     if [ $? -ne 0 ]; then
         echo "Failed to install Redis for data plane"
