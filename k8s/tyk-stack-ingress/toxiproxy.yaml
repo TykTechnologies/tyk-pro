@@ -19,12 +19,6 @@ data:
         "enabled": true
       },
       {
-        "name": "dp-gateway",
-        "listen": "[::]:8081",
-        "upstream": "gateway-svc-tyk-data-plane-tyk-gateway.tyk-dp.svc:8080",
-        "enabled": true
-      },
-      {
         "name": "mdcb",
         "listen": "[::]:9091",
         "upstream": "mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091",
@@ -76,8 +70,6 @@ spec:
           name: dashboard
         - containerPort: 8080
           name: cp-gateway
-        - containerPort: 8081
-          name: dp-gateway
         - containerPort: 9091
           name: mdcb
         - containerPort: 6379
@@ -111,9 +103,6 @@ spec:
   - name: cp-gateway
     port: 8080
     targetPort: cp-gateway
-  - name: dp-gateway
-    port: 8081
-    targetPort: dp-gateway
   - name: mdcb
     port: 9091
     targetPort: mdcb

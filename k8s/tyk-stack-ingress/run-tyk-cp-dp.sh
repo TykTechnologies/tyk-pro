@@ -23,7 +23,7 @@ else
     echo "Deploying without Toxiproxy"
     export REDIS_URL="redis.tyk.svc:6379"
     export MONGO_URL="mongodb://mongo.tyk.svc:27017/tyk_analytics"
-    export DASHBOARD_URL="tyk-dashboard.tyk.svc:3000"
+    export DASHBOARD_URL="dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000"
     export MDCB_CONNECTIONSTRING="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
     export DP_REDIS_URL="redis.tyk-dp.svc:6379"
 fi
