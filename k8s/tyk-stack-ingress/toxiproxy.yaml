@@ -31,9 +31,15 @@ data:
         "enabled": true
       },
       {
-        "name": "redis-dp",
+        "name": "redis-dp-1",
         "listen": "[::]:8379",
-        "upstream": "redis.tyk-dp.svc:6379",
+        "upstream": "redis.tyk-dp-1.svc:6379",
+        "enabled": true
+      },
+      {
+        "name": "redis-dp-2",
+        "listen": "[::]:9379",
+        "upstream": "redis.tyk-dp-2.svc:6379",
         "enabled": true
       },
       {
@@ -75,7 +81,9 @@ spec:
         - containerPort: 6379
           name: redis-cp
         - containerPort: 8379
-          name: redis-dp
+          name: redis-dp-1
+        - containerPort: 9379
+          name: redis-dp-2
         - containerPort: 27017
           name: mongo
         - containerPort: 8474
@@ -109,9 +117,12 @@ spec:
   - name: redis-cp
     port: 6379
     targetPort: redis-cp
-  - name: redis-dp
+  - name: redis-dp-1
     port: 8379
-    targetPort: redis-dp
+    targetPort: redis-dp-1
+  - name: redis-dp-2
+    port: 9379
+    targetPort: redis-dp-2
   - name: mongo
     port: 27017
     targetPort: mongo

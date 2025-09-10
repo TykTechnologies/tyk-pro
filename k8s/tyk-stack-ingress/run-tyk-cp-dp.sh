@@ -16,16 +16,14 @@ if [ "$USE_TOXIPROXY" = "true" ]; then
     # Set Toxiproxy-specific environment variables
     export REDIS_URL="toxiproxy.tyk.svc:6379"
     export MONGO_URL="mongodb://toxiproxy.tyk.svc:27017/tyk_analytics"
-    export DASHBOARD_URL="toxiproxy.tyk.svc:3000"
+    export DASHBOARD_URL="http://toxiproxy.tyk.svc:3000"
     export MDCB_CONNECTIONSTRING="toxiproxy.tyk.svc:9091"
-    export DP_REDIS_URL="toxiproxy.tyk.svc:8379"
 else
     echo "Deploying without Toxiproxy"
     export REDIS_URL="redis.tyk.svc:6379"
     export MONGO_URL="mongodb://mongo.tyk.svc:27017/tyk_analytics"
-    export DASHBOARD_URL="dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000"
+    export DASHBOARD_URL="http://dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000"
     export MDCB_CONNECTIONSTRING="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
-    export DP_REDIS_URL="redis.tyk-dp-1.svc:6379"
 fi
 
 # Create namespace
@@ -126,8 +124,21 @@ export USER_API_KEY=$(kubectl get secret --namespace tyk tyk-operator-conf -o js
 echo "----- Creating secret for data plane in tyk namespace -----"
 
 # Install data planes in a loop
-for i in 1 2; do
+for i in 1 2; do    
+    # Set the appropriate Redis URL for this data plane
+    if [ "$USE_TOXIPROXY" = "true" ]; then
+        if [ "$i" -eq 1 ]; then
+            DP_REDIS_URL="toxiproxy.tyk.svc:8379"
+        else
+            DP_REDIS_URL="toxiproxy.tyk.svc:9379"
+        fi
+    else
+        DP_REDIS_URL="redis.tyk-dp-${i}.svc:6379"
+    fi
+
     echo "----- Installing tyk-data-plane in tyk-dp-${i} namespace -----"
+    echo "----- Using Redis URL: ${DP_REDIS_URL} -----"
+    
     kubectl create namespace tyk-dp-${i}
     kubectl -n tyk-dp-${i} create secret generic tyk-data-plane-secret \
         --from-literal=orgId="$ORG_ID" \

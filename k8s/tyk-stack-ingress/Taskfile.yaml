@@ -56,7 +56,7 @@ tasks:
         
         # Start port-forwarding for Data Plane Gateway
         echo "Starting port-forward for Data Plane Gateway on localhost:8181..." | tee -a $LOG_FILE
-        kubectl port-forward -n tyk-dp svc/gateway-svc-tyk-data-plane-tyk-gateway 8181:8080 >> $LOG_FILE 2>&1 &
+        kubectl port-forward -n tyk-dp-1 svc/gateway-svc-tyk-data-plane-tyk-gateway 8181:8080 >> $LOG_FILE 2>&1 &
         DP_GW_PID=$!
         echo "Data Plane Gateway port-forward started with PID $DP_GW_PID" | tee -a $LOG_FILE
         
