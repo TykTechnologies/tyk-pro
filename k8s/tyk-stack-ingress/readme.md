@@ -1,7 +1,11 @@
-# How to start k8s environment and tests
+# How to start Tyk Control Plane and Data Plane in Kubernetes
 
-### [mandatory] Provide License
-Export license to *TYK_DB_LICENSEKEY* env variable (or save it in .env file or rename .env_template file).
+This guide explains how to set up a Tyk environment with a Control Plane and multiple Data Planes in Kubernetes.
+
+### [mandatory] Provide Licenses
+Export licenses to environment variables (or save them in .env file or rename .env_template file):
+- *TYK_DB_LICENSEKEY* - Dashboard license
+- *TYK_MDCB_LICENSEKEY* - MDCB license (required for Control Plane / Data Plane setup)
 
 ### [mandatory] Install Tyk helm charts
 <details>
@@ -13,9 +17,8 @@ Export license to *TYK_DB_LICENSEKEY* env variable (or save it in .env file or r
   ```
 </details>
 
-
 ### [optional] Choose Docker image
-You can choose Dash and GW Docker images you want to use in your env.
+You can choose Dashboard and Gateway Docker images you want to use in your env.
 
 *If you want to use different tag* -> set proper value in *DASH_IMAGE_TAG* and *GW_IMAGE_TAG* env variables (or save it in .env file).
 
@@ -25,39 +28,162 @@ Command to login to ECR
 aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 754489498669.dkr.ecr.eu-central-1.amazonaws.com
 ```
 
-## Starting Env
-1. Provide License (as described above)
+## Starting Control Plane and Data Planes
+1. Provide Licenses (as described above)
 2. Create k8s cluster. If you use kind:
 ```
 ./create-cluster.sh
 ```
-3. In this folder, run script
+3. In this folder, run the script:
 ```
-./run-tyk-stack.sh
+./run-tyk-cp-dp.sh
 ```
+
+You can also enable Toxiproxy for testing network issues:
+```
+./run-tyk-cp-dp.sh toxiproxy=true
+```
+
 #### When script is finished you should have the following deployed in your cluster:
-- Tyk Dashboard (2 pods)
-- Tyk Gateway
-- mongo
-- redis
+- **Control Plane (tyk namespace)**:
+  - Tyk Dashboard
+  - Tyk Gateway
+  - Tyk MDCB
+  - MongoDB
+  - Redis
+- **Data Plane 1 (tyk-dp-1 namespace)**:
+  - Tyk Gateway (1 replica)
+  - Redis
+- **Data Plane 2 (tyk-dp-2 namespace)**:
+  - Tyk Gateway (2 replicas)
+  - Redis
 
 ## Port Forwarding
 Apps are available using port-forwarding.
 
-Dashboard:
+**Control Plane Dashboard**:
 ```
-kubectl -n tyk port-forward service/dashboard-svc-tyk-stack-tyk-dashboard 3000:3000
+kubectl -n tyk port-forward service/dashboard-svc-tyk-control-plane-tyk-dashboard 3000:3000
 ```
 
-Gateway:
+**Control Plane Gateway**:
 ```
-kubectl -n tyk port-forward service/gateway-svc-tyk-stack-tyk-gateway 8080:8080
+kubectl -n tyk port-forward service/gateway-svc-tyk-control-plane-tyk-gateway 8080:8080
 ```
+
+**Data Plane 1 Gateway**:
+```
+kubectl -n tyk-dp-1 port-forward service/gateway-svc-tyk-data-plane-tyk-gateway 8081:8080
+```
+
+**Data Plane 2 Gateway**:
+```
+kubectl -n tyk-dp-2 port-forward service/gateway-svc-tyk-data-plane-tyk-gateway 8082:8080
+```
+
+**Toxiproxy API** (if enabled):
+```
+kubectl -n tyk port-forward service/toxiproxy 8474:8474
+```
+
+## Accessing Services via Ingress
+The services are also accessible via Ingress with the following hosts:
+- Control Plane Gateway: chart-example.local
+- Data Plane 1 Gateway: chart-gw-dp-1.local
+- Data Plane 2 Gateway: chart-gw-dp-2.local
+
+Add these entries to your /etc/hosts file:
+```
+127.0.0.1 chart-example.local chart-gw-dp-1.local chart-gw-dp-2.local
+```
+
+## Using Task Commands
+
+This project includes a Taskfile.yaml that provides convenient commands for managing the Tyk environment. You can use [Task](https://taskfile.dev/) to run these commands.
+
+### Available Commands
+
+| Command | Description | Usage |
+|---------|-------------|-------|
+| `create-cluster` | Creates a Kind Kubernetes cluster with port mappings for ingress | `task -d k8s/tyk-stack-ingress create-cluster` |
+| `deploy` | Deploys Tyk control plane and data plane in the Kubernetes cluster | `task -d k8s/tyk-stack-ingress deploy` |
+| `deploy-with-toxiproxy` | Deploys Tyk control plane and data plane with Toxiproxy for network simulation | `task -d k8s/tyk-stack-ingress deploy-with-toxiproxy` |
+| `get-dp-secret` | Gets the tyk-data-plane-secret from the tyk-dp namespace in human-readable format | `task -d k8s/tyk-stack-ingress get-dp-secret` |
+| `start-port-forward` | Port-forwards all Tyk services and saves logs to a file | `task -d k8s/tyk-stack-ingress start-port-forward` |
+| `stop-port-forward` | Stops all kubectl port-forward processes | `task -d k8s/tyk-stack-ingress stop-port-forward` |
+| `start-toxiproxy-forward` | Port-forwards the Toxiproxy API and all proxies to localhost | `task -d k8s/tyk-stack-ingress start-toxiproxy-forward` |
+| `clean` | Deletes all Tyk namespaces and resources from the Kubernetes cluster | `task -d k8s/tyk-stack-ingress clean` |
+
+### Port Forwarding with Task
+
+Instead of manually running port-forward commands, you can use the `start-port-forward` task to automatically port-forward all services:
+
+```bash
+task -d k8s/tyk-stack-ingress start-port-forward
+```
+
+This will port-forward:
+- Dashboard to localhost:3000
+- Control Plane Gateway to localhost:8080
+- MDCB to localhost:9091
+- Data Plane Gateway to localhost:8181
+
+All port-forwarding logs will be saved to `tyk-port-forward.log`.
+
+To stop all port-forwarding:
+
+```bash
+task -d k8s/tyk-stack-ingress stop-port-forward
+```
+
+### Using Toxiproxy
+
+If you deployed with Toxiproxy, you can use the `start-toxiproxy-forward` task to port-forward the Toxiproxy API and all proxied services:
+
+```bash
+task -d k8s/tyk-stack-ingress start-toxiproxy-forward
+```
+
+This makes the Toxiproxy API available at http://localhost:8474, where you can control network conditions for testing.
 
 ## Executing tests
 
 To execute tests:
 ```
 pytest --ci -s -m dash_admin
+```
+
+## Troubleshooting
+
+### Checking logs
+To check logs for a specific component:
+
+**Dashboard**:
+```
+kubectl -n tyk logs -l app.kubernetes.io/component=dashboard
+```
+
+**Control Plane Gateway**:
+```
+kubectl -n tyk logs -l app.kubernetes.io/component=gateway
+```
+
+**MDCB**:
+```
+kubectl -n tyk logs -l app.kubernetes.io/component=mdcb
+```
+
+**Data Plane Gateway**:
+```
+kubectl -n tyk-dp-1 logs -l app.kubernetes.io/component=gateway
+kubectl -n tyk-dp-2 logs -l app.kubernetes.io/component=gateway
+```
+
+### Cleaning Up
+
+To remove all Tyk resources and namespaces from your cluster:
+
+```bash
+task -d k8s/tyk-stack-ingress clean
 ```
 

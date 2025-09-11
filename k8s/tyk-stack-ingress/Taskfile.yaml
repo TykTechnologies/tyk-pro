@@ -82,7 +82,7 @@ tasks:
         
         # Port-forward all Toxiproxy ports
         echo "Starting port-forward for Toxiproxy API on localhost:8474..." | tee -a $LOG_FILE
-        kubectl port-forward -n tyk svc/toxiproxy 8474:8474 3000:3000 8080:8080 8181:9091 8181:8081 27017:27017 8474:8474 >> $LOG_FILE 2>&1 &
+        kubectl port-forward -n tyk svc/toxiproxy 8474:8474 3000:3000 8080:8080 9091:9091 27017:27017 8379:8379 >> $LOG_FILE 2>&1 &
         TOXIPROXY_PID=$!
         echo "Toxiproxy port-forward started with PID $TOXIPROXY_PID" | tee -a $LOG_FILE
         echo "Toxiproxy API available at: http://localhost:8474"
