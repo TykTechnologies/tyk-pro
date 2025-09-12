@@ -5,7 +5,7 @@ This guide explains how to set up a Tyk environment with a Control Plane and mul
 ### [mandatory] Provide Licenses
 Export licenses to environment variables (or save them in .env file or rename .env_template file):
 - *TYK_DB_LICENSEKEY* - Dashboard license
-- *TYK_MDCB_LICENSEKEY* - MDCB license (required for Control Plane / Data Plane setup)
+- *TYK_MDCB_LICENSEKEY* - MDCB license (required for Control Plane setup)
 
 ### [mandatory] Install Tyk helm charts
 <details>
