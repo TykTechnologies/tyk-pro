@@ -399,7 +399,7 @@ tyk-gateway:
       enabled: true
 
       # specify ingress controller class name
-      className: ""
+      className: "nginx"
 
       # annotations for ingress
       annotations: {}
@@ -1404,7 +1404,7 @@ tyk-dashboard:
     ingress:
       enabled: true
       # specify your ingress controller class name below
-      className: ""
+      className: "nginx"
       annotations: {}
         # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
@@ -1629,7 +1629,7 @@ tyk-mdcb:
     http_ingress:
       enabled: true
       # className specifies your ingress controller class name below
-      className: ""
+      className: "nginx"
       # annotations specifies annotations to be added on Ingress resource.
       annotations: {}
       # kubernetes.io/ingress.class: nginx

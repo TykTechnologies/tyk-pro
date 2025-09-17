@@ -357,7 +357,7 @@ tyk-gateway:
       enabled: true
 
       # specify ingress controller class name
-      className: ""
+      className: "nginx"
 
       # annotations for ingress
       annotations: {}
