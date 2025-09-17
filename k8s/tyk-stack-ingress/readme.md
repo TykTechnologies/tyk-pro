@@ -129,7 +129,6 @@ curl -H "Host: chart-gw.local" http://$INGRESS_IP/hello
 # MDCB health check
 curl -H "Host: chart-mdcb.local" http://$INGRESS_IP/health
 ```
-```
 
 ## Using Task Commands
 
