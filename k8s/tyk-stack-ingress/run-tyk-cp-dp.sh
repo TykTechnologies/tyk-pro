@@ -7,8 +7,7 @@ if [ -f .env ]; then
 fi
 
 cd $(dirname $0)
-
-source ./lib.sh
+source lib.sh
 
 NUM_DATA_PLANES="${NUM_DATA_PLANES:-2}"
 NGINX_TIMEOUT="${NGINX_TIMEOUT:-600s}"
@@ -33,6 +32,7 @@ if [[ -z "${TYK_DB_LICENSEKEY}" ]]; then
   exit 1
 fi
 
+NGINX_SVC_TYPE=${NGINX_SVC_TYPE:-"NodePort"}
 DASH_IMAGE_TAG=${DASH_IMAGE_TAG:-"v5.2.1"}
 GW_IMAGE_TAG=${GW_IMAGE_TAG:-"v5.2.1"}
 IMAGE_REPO=${IMAGE_REPO:-"tykio"}
@@ -63,7 +63,7 @@ helm repo update
 helm upgrade --install nginx ingress-nginx/ingress-nginx \
   --namespace tyk \
   --create-namespace \
-  --set controller.service.type=LoadBalancer \
+  --set controller.service.type=$NGINX_SVC_TYPE \
   --wait \
   --timeout=$NGINX_TIMEOUT
 if [ $? -ne 0 ]; then
