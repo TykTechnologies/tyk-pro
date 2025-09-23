@@ -51,12 +51,20 @@ You can also enable Toxiproxy for testing network issues:
   - Tyk MDCB
   - MongoDB
   - Redis
+  - Nginx Ingress Controller
 - **Data Plane 1 (tyk-dp-1 namespace)**:
   - Tyk Gateway (1 replica)
   - Redis
+  - Ingress
 - **Data Plane 2 (tyk-dp-2 namespace)**:
   - Tyk Gateway (2 replicas)
   - Redis
+  - Ingress
+
+#### Ingress Configuration
+The script automatically configures:
+- Nginx ingress controller with LoadBalancer service type
+- Ingress resources for all services with `nginx` ingress class
 
 ## Port Forwarding
 Apps are available using port-forwarding.
@@ -87,14 +95,39 @@ kubectl -n tyk port-forward service/toxiproxy 8474:8474
 ```
 
 ## Accessing Services via Ingress
-The services are also accessible via Ingress with the following hosts:
-- Control Plane Gateway: chart-example.local
-- Data Plane 1 Gateway: chart-gw-dp-1.local
-- Data Plane 2 Gateway: chart-gw-dp-2.local
 
-Add these entries to your /etc/hosts file:
+**Note** that in order to use the following approach re-run `run-tyk-cp-dp.sh` script again as follows:
+
+```bash
+NGINX_SVC_TYPE="LoadBalancer" ./k8s/tyk-stack-ingress/run-tyk-cp-dp.sh
 ```
-127.0.0.1 chart-example.local chart-gw-dp-1.local chart-gw-dp-2.local
+
+This will instruct script to update the nginx to use LoadBalancer, and with the help of
+`cloud-provider-kind` container, we'll have access to Ingresses locally via the given hosts in Ingress resource.
+
+**All Ingresses:**
+- Data Plane 1 Gateway: `chart-gw-dp-1.local`
+- Data Plane 2 Gateway: `chart-gw-dp-2.local`
+- Control Plane Gateway: `chart-gw.local`
+- Dashboard: `chart-dash.local`
+- MDCB: `chart-mdcb.local`
+
+### Accessing Services via curl
+Get the LoadBalancer IP and test all endpoints:
+
+```bash
+# Get LoadBalancer IP
+INGRESS_IP=$(kubectl -n tyk get service nginx-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Data Plane Gateways health checks
+curl -H "Host: chart-gw-dp-1.local" http://$INGRESS_IP/hello
+curl -H "Host: chart-gw-dp-2.local" http://$INGRESS_IP/hello
+
+# Control Plane Gateway health check
+curl -H "Host: chart-gw.local" http://$INGRESS_IP/hello
+
+# MDCB health check
+curl -H "Host: chart-mdcb.local" http://$INGRESS_IP/health
 ```
 
 ## Using Task Commands
