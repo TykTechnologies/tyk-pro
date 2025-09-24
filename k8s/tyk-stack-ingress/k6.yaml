@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-test-script
+  namespace: tools
+data:
+  test-script.js: |
+    import http from 'k6/http';
+    import { sleep, check } from 'k6';
+    
+    // Get environment variables with defaults
+    const API_NAME = __ENV.API_NAME || 'test';
+    const TEST_DURATION = __ENV.TEST_DURATION || '30s';
+    const TARGET_NAMESPACE = __ENV.TARGET_NAMESPACE || 'tyk-dp-1';
+    
+    export const options = {
+      vus: 10,
+      duration: TEST_DURATION,
+      thresholds: {
+        http_req_failed: ['rate<0.01'],
+        http_req_duration: ['p(95)<500']
+      },
+      // Add summary export for better output
+      summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)']
+    };
+
+    export default function() {
+      const res = http.get(`http://gateway-svc-tyk-data-plane-tyk-gateway.${TARGET_NAMESPACE}.svc.cluster.local:8080/${API_NAME}/upstream`);
+      check(res, {
+        'status is 200': (r) => r.status === 200,
+      });
+      sleep(1);
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k6-runner
+  namespace: tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k6-runner
+  template:
+    metadata:
+      labels:
+        app: k6-runner
+    spec:
+      volumes:
+        - name: k6-test-script
+          configMap:
+            name: k6-test-script
+      containers:
+      - name: k6
+        image: ghcr.io/grafana/xk6-dashboard:0.6.1
+        command: ["sleep", "infinity"]
+        env:
+        - name: API_NAME
+          value: "test"
+        - name: TEST_DURATION
+          value: "30s"
+        - name: TARGET_NAMESPACE
+          value: "tyk-dp-1"
+        volumeMounts:
+          - { name: k6-test-script, mountPath: /scripts }
+        ports:
+          - containerPort: 5665
+            name: dashboard
+        resources:
+          limits: { memory: "512Mi", cpu: "500m" }
+          requests: { memory: "256Mi", cpu: "250m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k6-dashboard
+  namespace: tools
+spec:
+  selector:
+    app: k6-runner
+  ports:
+  - port: 5665
+    targetPort: dashboard
+  type: ClusterIP

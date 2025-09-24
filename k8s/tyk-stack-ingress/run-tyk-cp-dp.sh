@@ -188,6 +188,27 @@ for i in $(seq 1 $NUM_DATA_PLANES); do
     --set tyk-gateway.gateway.ingress.className="nginx" --wait
 
   log "----- Successfully installed tyk-data-plane-${i} -----"
+
 done
+
+log "----- Creating tools namespace -----"
+kubectl create namespace tools || true
+
+log "----- Installing Flask upstream app in tools namespace -----"
+kubectl apply -f flask-upstream.yaml
+if [ $? -ne 0 ]; then
+  error "Failed to install Flask upstream app in tools namespace"
+  exit 1
+fi
+log "Flask upstream app deployed successfully at flask-upstream.tools.svc:5000/upstream"
+
+log "----- Installing k6 load testing resources in tools namespace -----"
+kubectl apply -f k6.yaml
+if [ $? -ne 0 ]; then
+  error "Failed to install k6 load testing resources"
+  exit 1
+fi
+log "----- Successfully installed k6 load testing resources -----"
+log "To run a test, use the run-k6-test-custom task with parameters"
 
 log "--> $0 Done"

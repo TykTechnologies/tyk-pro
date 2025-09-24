@@ -96,7 +96,60 @@ tasks:
         echo "  - MongoDB: localhost:8480"
         echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward"
 
+  run-k6-test-with-dashboard:
+    desc: Runs k6 test with dashboard enabled
+    vars:
+      TARGET_NAMESPACE: '{{.TARGET_NAMESPACE}}'
+      API_NAME: '{{.API_NAME}}'
+      DURATION: '{{.DURATION}}'
+    cmds:
+      - |
+        # Set environment variables and run k6 with dashboard output
+        echo "Starting k6 test with dashboard..."
+        kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE={{.TARGET_NAMESPACE}} API_NAME={{.API_NAME}} TEST_DURATION={{.DURATION}} k6 run --out 'dashboard=host=0.0.0.0&port=5665&period=2s' /scripts/test-script.js &
+        
+        # Wait for the dashboard to be ready
+        echo "Waiting for dashboard to be ready..."
+        sleep 3
+        
+        # Start port-forwarding automatically
+        echo "Starting port-forward for k6 dashboard..."
+        echo "Access the dashboard at http://localhost:5665"
+        echo "Press Ctrl+C to stop the port-forward when done."
+        kubectl port-forward -n tools svc/k6-dashboard 5665:5665
+
+  run-k6-test:
+    desc: Runs k6 test with custom parameters for target namespace, API name, duration, and optional dashboard
+    cmds:
+      - |
+        # Get parameters with defaults
+        TARGET_NAMESPACE={{.target_namespace | default "tyk-dp-1"}}
+        API_NAME={{.api_name | default "test"}}
+        DURATION={{.duration | default "30s"}}
+        DASHBOARD={{.dashboard | default "false"}}
+        
+        echo "Starting k6 test with the following parameters:"
+        echo "Target Namespace: $TARGET_NAMESPACE"
+        echo "API Name: $API_NAME"
+        echo "Test Duration: $DURATION"
+        echo "Dashboard: $DASHBOARD"
+        
+        # Kill any existing k6 dashboard process first
+        echo "Killing any existing k6 dashboard process..."
+        kubectl exec -n tools deploy/k6-runner -c k6 -- pkill -f "k6.*dashboard" || echo "No existing k6 dashboard process found"
+        sleep 1
+        
+        if [ "$DASHBOARD" = "true" ]; then
+          # Run with dashboard using the dedicated task
+          task -d k8s/tyk-stack-ingress run-k6-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
+        else
+          # Run k6 without dashboard
+          echo "Starting k6 test without dashboard..."
+          kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME TEST_DURATION=$DURATION k6 run /scripts/test-script.js
+          echo "Test completed."
+        fi
+
   clean:
     desc: Deletes all Tyk namespaces and resources from the Kubernetes cluster
     cmds:
-      - kubectl delete namespace tyk tyk-dp-1 tyk-dp-2
+      - kubectl delete namespace tyk tyk-dp-1 tyk-dp-2 tools
