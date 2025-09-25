@@ -141,7 +141,7 @@ tasks:
         
         if [ "$DASHBOARD" = "true" ]; then
           # Run with dashboard using the dedicated task
-          task -d k8s/tyk-stack-ingress run-k6-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
+          task -d k8s/tyk-stack-ingress run-k6-test-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
         else
           # Run k6 without dashboard
           echo "Starting k6 test without dashboard..."
