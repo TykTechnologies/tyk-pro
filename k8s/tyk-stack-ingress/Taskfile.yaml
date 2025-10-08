@@ -106,11 +106,7 @@ tasks:
       - |
         # Set environment variables and run k6 with dashboard output
         echo "Starting k6 test with dashboard..."
-        kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE={{.TARGET_NAMESPACE}} API_NAME={{.API_NAME}} TEST_DURATION={{.DURATION}} k6 run --out 'dashboard=host=0.0.0.0&port=5665&period=2s' /scripts/test-script.js &
-        
-        # Wait for the dashboard to be ready
-        echo "Waiting for dashboard to be ready..."
-        sleep 3
+        kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE={{.TARGET_NAMESPACE}} API_NAME={{.API_NAME}} TEST_DURATION={{.DURATION}} k6 run --out 'dashboard=host=0.0.0.0&port=5665&period=2s' /scripts/test-script.js &      
         
         # Start port-forwarding automatically
         echo "Starting port-forward for k6 dashboard..."
@@ -137,11 +133,10 @@ tasks:
         # Kill any existing k6 dashboard process first
         echo "Killing any existing k6 dashboard process..."
         kubectl exec -n tools deploy/k6-runner -c k6 -- pkill -f "k6.*dashboard" || echo "No existing k6 dashboard process found"
-        sleep 1
         
         if [ "$DASHBOARD" = "true" ]; then
           # Run with dashboard using the dedicated task
-          task -d k8s/tyk-stack-ingress run-k6-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
+          task -d k8s/tyk-stack-ingress run-k6-test-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
         else
           # Run k6 without dashboard
           echo "Starting k6 test without dashboard..."

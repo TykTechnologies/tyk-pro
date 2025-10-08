@@ -211,7 +211,7 @@ This runs a basic load test against the default data plane gateway.
 #### Custom Load Test
 
 ```bash
-task -d k8s/tyk-stack-ingress run-k6-test-custom target_namespace=tyk-dp-1 api_name=test duration=30s
+task -d k8s/tyk-stack-ingress run-k6-test target_namespace=tyk-dp-1 api_name=test duration=30s
 ```
 
 Parameters:
@@ -223,7 +223,7 @@ Parameters:
 #### Load Test with Dashboard
 
 ```bash
-task -d k8s/tyk-stack-ingress run-k6-test-custom target_namespace=tyk-dp-1 api_name=test duration=30s dashboard=true
+task -d k8s/tyk-stack-ingress run-k6-test-with-dashboard target_namespace=tyk-dp-1 api_name=test duration=30s dashboard=true
 ```
 
 This runs a load test with the k6 dashboard enabled, which provides real-time metrics visualization. The dashboard will be available at http://localhost:5665.

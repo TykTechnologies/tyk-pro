@@ -76,7 +76,7 @@ log "----- nginx ingress controller successfully installed/upgraded -----"
 # Deploy Toxiproxy if enabled
 if [ "$USE_TOXIPROXY" = "true" ]; then
   log "----- Installing Toxiproxy -----"
-  kubectl apply -f toxiproxy.yaml
+  kubectl apply -f ../apps/toxiproxy.yaml
   log "Waiting for Toxiproxy to be ready..."
   kubectl wait --namespace tyk --for=condition=available --timeout=$TOXIPROXY_WAIT_TIMEOUT deployment/toxiproxy || true
 fi
@@ -122,7 +122,7 @@ kubectl wait --namespace tyk \
 log "----- Installing tyk-control-plane -----"
 log "Using Repo: $IMAGE_REPO Gateway: $GW_IMAGE_TAG, Dashboard: $DASH_IMAGE_TAG"
 
-helm upgrade --install -n tyk tyk-control-plane tyk-helm/tyk-control-plane -f ./control-plane-values.yaml \
+helm upgrade --install -n tyk tyk-control-plane tyk-helm/tyk-control-plane -f ./manifests/control-plane-values.yaml \
   --set global.license.dashboard="$TYK_DB_LICENSEKEY" \
   --set global.storageType="mongo" \
   --set tyk-mdcb.mdcb.license="$TYK_MDCB_LICENSEKEY" \
@@ -176,7 +176,7 @@ for i in $(seq 1 $NUM_DATA_PLANES); do
   helm upgrade --install redis tyk-helm/simple-redis -n tyk-dp-${i} --wait
 
   # Install data plane
-  helm upgrade --install -n tyk-dp-${i} tyk-data-plane tyk-helm/tyk-data-plane -f ./data-plane-values.yaml \
+  helm upgrade --install -n tyk-dp-${i} tyk-data-plane tyk-helm/tyk-data-plane -f ./manifests/data-plane-values.yaml \
     --set tyk-gateway.gateway.replicaCount=${i} \
     --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
     --set global.secrets.useSecretName="tyk-data-plane-secret" \
@@ -194,16 +194,24 @@ done
 log "----- Creating tools namespace -----"
 kubectl create namespace tools || true
 
-log "----- Installing Flask upstream app in tools namespace -----"
-kubectl apply -f flask-upstream.yaml
+log "----- Installing httpbin app in tools namespace -----"
+kubectl apply -f ../apps/httpbin.yaml
 if [ $? -ne 0 ]; then
-  error "Failed to install Flask upstream app in tools namespace"
+  error "Failed to install httpbin app in tools namespace"
   exit 1
 fi
-log "Flask upstream app deployed successfully at flask-upstream.tools.svc:5000/upstream"
+log "httpbin app deployed successfully at httpbin.tools.svc:8080/get"
 
 log "----- Installing k6 load testing resources in tools namespace -----"
-kubectl apply -f k6.yaml
+# Create ConfigMap from the external script file
+kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js -n tools --dry-run=client -o yaml | kubectl apply -f -
+if [ $? -ne 0 ]; then
+  error "Failed to create k6 test script ConfigMap"
+  exit 1
+fi
+
+# Apply the k6 deployment
+kubectl apply -f ../apps/k6.yaml
 if [ $? -ne 0 ]; then
   error "Failed to install k6 load testing resources"
   exit 1
