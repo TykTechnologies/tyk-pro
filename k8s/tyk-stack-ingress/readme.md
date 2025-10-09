@@ -60,6 +60,9 @@ You can also enable Toxiproxy for testing network issues:
   - Tyk Gateway (2 replicas)
   - Redis
   - Ingress
+- **Tools (tools namespace)**:
+  - Flask Upstream - A simple Flask application that serves as an upstream service for API testing
+  - k6 Runner - A load testing tool for sending traffic to the gateways
 
 #### Ingress Configuration
 The script automatically configures:
@@ -145,6 +148,8 @@ This project includes a Taskfile.yaml that provides convenient commands for mana
 | `start-port-forward` | Port-forwards all Tyk services and saves logs to a file | `task -d k8s/tyk-stack-ingress start-port-forward` |
 | `stop-port-forward` | Stops all kubectl port-forward processes | `task -d k8s/tyk-stack-ingress stop-port-forward` |
 | `start-toxiproxy-forward` | Port-forwards the Toxiproxy API and all proxies to localhost | `task -d k8s/tyk-stack-ingress start-toxiproxy-forward` |
+| `run-k6-test` | Runs k6 test with custom parameters | `task -d k8s/tyk-stack-ingress run-k6-test target_namespace=tyk-dp-1 api_name=test duration=30s dashboard=false` |
+| `run-k6-with-dashboard` | Runs k6 test with dashboard enabled | `task -d k8s/tyk-stack-ingress run-k6-with-dashboard TARGET_NAMESPACE=tyk-dp-1 API_NAME=test DURATION=30s` |
 | `clean` | Deletes all Tyk namespaces and resources from the Kubernetes cluster | `task -d k8s/tyk-stack-ingress clean` |
 
 ### Port Forwarding with Task
@@ -178,6 +183,50 @@ task -d k8s/tyk-stack-ingress start-toxiproxy-forward
 ```
 
 This makes the Toxiproxy API available at http://localhost:8474, where you can control network conditions for testing.
+
+## Load Testing with k6
+
+The deployment includes a k6 load testing pod in the `tools` namespace that can be used to send traffic to any of the data plane gateways. This is useful for testing API performance, stability, and behavior under load.
+
+### Flask Upstream Service
+
+The deployment includes a simple Flask application in the `tools` namespace that serves as an upstream service for API testing. This service exposes an endpoint at `/upstream` that returns a JSON response. When creating APIs in the Tyk Dashboard, you can use this service as the upstream target with the URL:
+
+```
+http://flask-upstream.tools.svc:5000
+```
+
+### Running Load Tests
+
+You can run load tests using the following task commands:
+
+#### Basic Load Test
+
+```bash
+task -d k8s/tyk-stack-ingress run-k6-test
+```
+
+This runs a basic load test against the default data plane gateway.
+
+#### Custom Load Test
+
+```bash
+task -d k8s/tyk-stack-ingress run-k6-test target_namespace=tyk-dp-1 api_name=test duration=30s
+```
+
+Parameters:
+- `target_namespace`: The namespace of the gateway to test (default: tyk-dp-1)
+- `api_name`: The name of the API to test (default: test)
+- `duration`: How long to run the test (default: 30s)
+- `dashboard`: Whether to enable the k6 dashboard (default: false)
+
+#### Load Test with Dashboard
+
+```bash
+task -d k8s/tyk-stack-ingress run-k6-test-with-dashboard target_namespace=tyk-dp-1 api_name=test duration=30s dashboard=true
+```
+
+This runs a load test with the k6 dashboard enabled, which provides real-time metrics visualization. The dashboard will be available at http://localhost:5665.
 
 ## Executing tests
 
