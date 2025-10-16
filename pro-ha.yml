@@ -9,6 +9,8 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+    environment:
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     ports:
       - "6000:6000"
       - "8003:8003"
@@ -77,6 +79,7 @@ services:
     environment:
       - TYK_GW_LISTENPORT=8181
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -94,6 +97,7 @@ services:
     environment:
       - TYK_GW_LISTENPORT=8182
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -111,6 +115,7 @@ services:
     environment:
       - TYK_GW_LISTENPORT=8281
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -128,6 +133,7 @@ services:
     environment:
       - TYK_GW_LISTENPORT=8282
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
