@@ -1,4 +1,4 @@
 services:
   redis:
     volumes:
-      - ./upgrade-env/redis_data:/bitnami/redis
+      - ./upgrade-env/redis_data:/data
