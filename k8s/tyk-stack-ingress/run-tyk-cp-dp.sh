@@ -64,6 +64,15 @@ helm upgrade --install nginx ingress-nginx/ingress-nginx \
   --namespace tyk \
   --create-namespace \
   --set controller.service.type=$NGINX_SVC_TYPE \
+  --set controller.hostPort.enabled=true \
+  --set controller.hostPort.ports.http=80 \
+  --set controller.hostPort.ports.https=443 \
+  --set 'controller.tolerations[0].key=node-role.kubernetes.io/master' \
+  --set 'controller.tolerations[0].operator=Equal' \
+  --set 'controller.tolerations[0].effect=NoSchedule' \
+  --set 'controller.tolerations[1].key=node-role.kubernetes.io/control-plane' \
+  --set 'controller.tolerations[1].operator=Equal' \
+  --set 'controller.tolerations[1].effect=NoSchedule' \
   --wait \
   --timeout=$NGINX_TIMEOUT
 if [ $? -ne 0 ]; then
