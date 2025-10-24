@@ -114,3 +114,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 3
+
+  grpc-server:
+    profiles: ["all", "master-datacenter"]
+    container_name: grpc-server
+    image: andreiattyk/tyk-repo:grpc-tracing-example
+    ports:
+      - "9111:9111"
