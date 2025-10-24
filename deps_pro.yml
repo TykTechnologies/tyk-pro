@@ -77,3 +77,10 @@ services:
       - ./certs/nginx.key:/etc/nginx/ssl/nginx.key
     depends_on:
       - upstream
+
+  grpc-server:
+    profiles: ["all", "master-datacenter"]
+    container_name: grpc-server
+    image: tykio/tyk-grpc-plugin:v1.0
+    ports:
+      - "9111:9111"
