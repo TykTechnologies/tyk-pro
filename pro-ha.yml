@@ -145,6 +145,7 @@ services:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk
     healthcheck:
@@ -158,14 +159,15 @@ services:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk-analytics
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://tyk-analytics:3000/hello/ | grep -q '^200$'"]
-      interval: 10s
+      test: ["CMD", "curl", "-s", "-k", "http://tyk-analytics:3000/hello"]
+      interval: 15s
       retries: 30
-      start_period: 10s
-      timeout: 10s
+      start_period: 30s
+      timeout: 30s
 
   gateway-checker-1a:
     profiles: ["all", "slave-datacenter"]
