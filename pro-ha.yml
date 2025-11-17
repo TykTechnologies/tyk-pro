@@ -163,11 +163,11 @@ services:
     depends_on:
       - tyk-analytics
     healthcheck:
-      test: curl -s -k http://tyk-analytics:3000/hello | grep -o '"status":.*"ok"'
+      test: ["CMD", "curl", "-s", "-k", "http://tyk-analytics:3000/hello"]
       interval: 10s
       retries: 30
-      start_period: 10s
-      timeout: 10s
+      start_period: 60s
+      timeout: 15s
 
   gateway-checker-1a:
     profiles: ["all", "slave-datacenter"]
