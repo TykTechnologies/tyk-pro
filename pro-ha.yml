@@ -161,7 +161,7 @@ services:
     depends_on:
       - tyk-analytics
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://tyk-analytics:3000/hello/ | grep -q '^200$'"]
+      test: curl -s -k http://tyk-analytics:3000/hello | grep -o '"status":.*"ok"'
       interval: 10s
       retries: 30
       start_period: 10s
