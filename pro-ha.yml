@@ -164,10 +164,10 @@ services:
       - tyk-analytics
     healthcheck:
       test: ["CMD", "curl", "-s", "-k", "http://tyk-analytics:3000/hello"]
-      interval: 10s
+      interval: 15s
       retries: 30
-      start_period: 10s
-      timeout: 15s
+      start_period: 30s
+      timeout: 30s
 
   gateway-checker-1a:
     profiles: ["all", "slave-datacenter"]
