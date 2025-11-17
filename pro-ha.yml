@@ -145,6 +145,7 @@ services:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk
     healthcheck:
@@ -158,6 +159,7 @@ services:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk-analytics
     healthcheck:
