@@ -475,11 +475,7 @@ tyk-gateway:
     # extraEnvs is used to set gateway env variables
     # - name: TYK_GW_HTTPSERVEROPTIONS_SSLINSECURESKIPVERIFY
     #   value: "true"
-    extraEnvs:
-      - name: TYK_GW_SLAVEOPTIONS_KEYSPACESYNCINTERVAL
-        value: "1"
-      - name: TYK_GW_SLAVEOPTIONS_SYNCHRONISERENABLED
-        value: "true" 
+    extraEnvs: []
 
     # Sharding gateway allows you to selectively load APIs to specific gateways.
     # Also be sure to match API segmentation tags with the tags selected below.
