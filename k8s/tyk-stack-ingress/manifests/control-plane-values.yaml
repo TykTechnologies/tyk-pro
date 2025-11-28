@@ -1130,7 +1130,7 @@ tyk-bootstrap:
     #     readOnly: true
     extraVolumeMounts: []
 
-     # containerSecurityContext values for bootstrap containers
+    # containerSecurityContext values for bootstrap containers
     containerSecurityContext:
       runAsNonRoot: true
       runAsUser: 1000
