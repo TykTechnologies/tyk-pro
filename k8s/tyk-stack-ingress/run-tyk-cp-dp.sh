@@ -109,6 +109,9 @@ log "----- Preparing to install tyk-control-plane and tyk-data-plane -----"
 if [[ $IMAGE_REPO == 754489498669.dkr.ecr* ]]; then
   DASH_IMAGE_NAME="tyk-analytics"
   GW_IMAGE_NAME="tyk-ee"
+  MDCB_IMAGE_NAME="tyk-sink"
+  MDCB_IMAGE_TAG=${MDCB_IMAGE_TAG:-"master"}
+  MDCB_VALIDATION_IMAGE_TAG="v10.0.0" # a valid semver to pass version validation
   log "Creating ecrcred secret to access ECR repository $IMAGE_REPO"
   kubectl -n tyk create secret docker-registry ecrcred \
     --docker-server=754489498669.dkr.ecr.eu-central-1.amazonaws.com \
@@ -116,10 +119,19 @@ if [[ $IMAGE_REPO == 754489498669.dkr.ecr* ]]; then
     --docker-password="$(aws ecr get-login-password --region eu-central-1)"
   # make the default SA use it
   kubectl -n tyk patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}'
+  log "Pulling MDCB image"
+  # due to version validation in MDCB chart we need to have the image locally available
+  # Pull the master image but tag it with a valid semantic version to pass validation
+  docker pull "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG"
+  docker tag "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG" "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG"
+  kind load docker-image "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG" --name kind
 else
   log "Using official docker repo"
   GW_IMAGE_NAME="tyk-gateway"
   DASH_IMAGE_NAME="tyk-dashboard"
+  MDCB_IMAGE_NAME="tyk-mdcb-docker"
+  MDCB_IMAGE_TAG=${MDCB_IMAGE_TAG:-"v2.8.0"}
+  MDCB_VALIDATION_IMAGE_TAG="$MDCB_IMAGE_TAG"
 fi
 
 log "----- Waiting until ingress will be ready -----"
@@ -139,6 +151,8 @@ helm upgrade --install -n tyk tyk-control-plane tyk-helm/tyk-control-plane -f ./
   --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
   --set tyk-dashboard.dashboard.image.repository="$IMAGE_REPO/$DASH_IMAGE_NAME" \
   --set tyk-dashboard.dashboard.image.tag="$DASH_IMAGE_TAG" \
+  --set tyk-mdcb.mdcb.image.repository="$IMAGE_REPO/$MDCB_IMAGE_NAME" \
+  --set tyk-mdcb.mdcb.image.tag="$MDCB_VALIDATION_IMAGE_TAG" \
   --set global.redis.addrs[0]="$REDIS_URL" \
   --set global.mongo.mongoURL="$MONGO_URL" \
   --set tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString="$DASHBOARD_URL" --wait
