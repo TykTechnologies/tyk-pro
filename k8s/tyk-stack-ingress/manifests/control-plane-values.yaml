@@ -227,7 +227,7 @@ global:
   mdcbSynchronizer:
     # Enable the MDCB Synchroniser
     # It will be used to set TYK_MDCB_SYNCWORKER_ENABLED to true in Tyk MDCB deployment.
-    enabled: true
+    enabled: false
 
   mtls:
     # Sets the AES256 secret which is used to encode certificate private keys when
@@ -1500,11 +1500,11 @@ tyk-mdcb:
       # Secret is the key required for accessing secure HTTP endpoints and must be included as the `X-Tyk-Authorization` header.
       # Ensure confidentiality of the key and avoid exposing management endpoints publicly.
       # This field can be set using k8s secret. Please refer `mdcb.useSecretName` field.
-      secret: CHANGEME
+      secret: "password123"
       # EnableHTTPSecureEndpoints enables HTTP endpoints for monitoring and debugging MDCB.
       # Secure endpoints providing critical system information are disabled by default for security enhancement.
       # Authentication via the `Secret` is required for access, e.g., /dataplanes for dataplane details.
-      enableHttpSecureEndpoints: false
+      enableHttpSecureEndpoints: true
 
     # This is the preferred port setting for MDCB >= v2.6.0.
     # Users should use httpPort instead of probes.healthCheckPort for newer versions.
@@ -1674,7 +1674,9 @@ tyk-mdcb:
     #   image: sidecar:latest
     extraContainers: []
 
-    extraEnvs: []
+    extraEnvs:
+    - name: TYK_MDCB_INVALIDKEYCACHETTL
+      value: "5"
 
     # Additional volumes on the output MDCB Deployment definition.
     extraVolumes: []
