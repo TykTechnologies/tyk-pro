@@ -130,8 +130,7 @@ else
   GW_IMAGE_NAME="tyk-gateway"
   DASH_IMAGE_NAME="tyk-dashboard"
   MDCB_IMAGE_NAME="tyk-mdcb-docker"
-  MDCB_IMAGE_TAG=${MDCB_IMAGE_TAG:-"v2.8.0"}
-  MDCB_VALIDATION_IMAGE_TAG="$MDCB_IMAGE_TAG"
+  MDCB_VALIDATION_IMAGE_TAG=${MDCB_IMAGE_TAG:-"v2.8.0"}
 fi
 
 log "----- Waiting until ingress will be ready -----"
