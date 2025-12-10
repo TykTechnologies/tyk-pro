@@ -49,6 +49,7 @@ You can also enable Toxiproxy for testing network issues:
   - Tyk Dashboard
   - Tyk Gateway
   - Tyk MDCB
+  - Tyk Pump
   - MongoDB
   - Redis
   - Nginx Ingress Controller
@@ -95,6 +96,10 @@ kubectl -n tyk-dp-2 port-forward service/gateway-svc-tyk-data-plane-tyk-gateway 
 **Toxiproxy API** (if enabled):
 ```
 kubectl -n tyk port-forward service/toxiproxy 8474:8474
+```
+**Pump Metrics** (for Prometheus):
+```
+kubectl -n tyk port-forward service/pump-svc-tyk-control-plane-tyk-pump 9090:9090
 ```
 
 ## Accessing Services via Ingress
@@ -165,6 +170,7 @@ This will port-forward:
 - Control Plane Gateway to localhost:8080
 - MDCB to localhost:9091
 - Data Plane Gateway to localhost:8181
+- Pump to localhost:9090
 
 All port-forwarding logs will be saved to `tyk-port-forward.log`.
 
