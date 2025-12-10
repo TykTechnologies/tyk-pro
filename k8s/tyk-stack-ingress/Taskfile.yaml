@@ -60,7 +60,13 @@ tasks:
         DP_GW_PID=$!
         echo "Data Plane Gateway port-forward started with PID $DP_GW_PID" | tee -a $LOG_FILE
         
-        echo "All port-forwards started. PIDs: $DASHBOARD_PID $MDCB_PID $CP_GW_PID $DP_GW_PID" | tee -a $LOG_FILE
+        # Start port-forwarding for pump
+        echo "Starting port forwarding for pump on localhost:9090..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/pump-svc-tyk-control-plane-tyk-pump 9090:9090 >> $LOG_FILE 2>&1 &
+        PUMP_PID=$!
+        echo "Pump port-forward started with PID $PUMP_PID" | tee -a $LOG_FILE
+        
+        echo "All port-forwards started. PIDs: $DASHBOARD_PID $MDCB_PID $CP_GW_PID $DP_GW_PID $PUMP_PID" | tee -a $LOG_FILE
         echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward" | tee -a $LOG_FILE
         echo "Logs are being saved to $LOG_FILE"
 

@@ -13,6 +13,7 @@ NUM_DATA_PLANES="${NUM_DATA_PLANES:-2}"
 NGINX_TIMEOUT="${NGINX_TIMEOUT:-600s}"
 TOXIPROXY_WAIT_TIMEOUT="${TOXIPROXY_WAIT_TIMEOUT:-120s}"
 INGRESS_READY_TIMEOUT="${INGRESS_READY_TIMEOUT:-90s}"
+ENABLE_PUMP="${ENABLE_PUMP:-true}"
 
 # Parse named parameters
 USE_TOXIPROXY="false"
@@ -154,6 +155,7 @@ helm upgrade --install -n tyk tyk-control-plane tyk-helm/tyk-control-plane -f ./
   --set tyk-mdcb.mdcb.image.tag="$MDCB_VALIDATION_IMAGE_TAG" \
   --set global.redis.addrs[0]="$REDIS_URL" \
   --set global.mongo.mongoURL="$MONGO_URL" \
+  --set global.components.pump="$ENABLE_PUMP" \
   --set tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString="$DASHBOARD_URL" --wait
 
 if [ $? -ne 0 ]; then
