@@ -44,7 +44,7 @@ global:
     # If this is set to false, only the hook that checks for dashboard license will be run
     bootstrap: true
     # Determines whether the pump component should be installed.
-    pump: false
+    pump: true
     # Determines whether Tyk Developer Portal component should be installed.
     # If you want to bootstrap Tyk Developer Portal, set `tyk-bootstrap.bootstrap.devPortal` to true
     devPortal: false
@@ -329,7 +329,7 @@ tyk-gateway:
 
     # analyticsEnabled property is used to enable/disable analytics.
     # If set to empty or nil, analytics will be enabled/disabled based on `global.components.pump`.
-    analyticsEnabled: ""
+    analyticsEnabled: true
 
     image:
       # image repository for Tyk Gateway
@@ -804,7 +804,7 @@ tyk-pump:
 
     service:
       # Tyk Pump svc is disabled by default. Set it to true to enable it.
-      enabled: false
+      enabled: true
 
       # type specifies type of the service.
       type: ClusterIP
@@ -825,7 +825,7 @@ tyk-pump:
 
       # Tyk Pump health service is disabled by default.
       # Set it to true to enable it.
-      enabled: false
+      enabled: true
 
       # path sets the health check path.
       path: "hello"
@@ -1464,7 +1464,7 @@ tyk-mdcb:
     # MDCB can send analytics to Redis. This will allow tyk-pump to pull
     # analytics from Redis and send to your own data sinks.
     # It is used to set TYK_MDCB_FORWARDANALYTICSTOPUMP
-    forwardAnalyticsToPump: false
+    forwardAnalyticsToPump: true
 
     # This enables saving analytics in multiple keys as oppose to just having one.
     # It is useful when using a Redis cluster.
