@@ -255,9 +255,11 @@ def configure(
         if output_env:
             env_vars = generate_env_vars(toxiproxy_url, data_planes)
             if output_env == "shell":
-                console.print(format_shell_env(env_vars))
+                # Use standard print for reliable stdout redirection in CI
+                print(format_shell_env(env_vars), flush=True)
             elif output_env == "github-actions":
-                console.print(format_github_actions_env(env_vars))
+                # Use standard print for reliable stdout redirection in CI
+                print(format_github_actions_env(env_vars), flush=True)
             else:
                 err_console.print(f"[red]Unknown format: {output_env}[/red]")
                 raise typer.Exit(1)

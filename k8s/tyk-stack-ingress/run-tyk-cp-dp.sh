@@ -203,7 +203,7 @@ populateToxiProxy() {
   fi
 
   log "Toxiproxy configured successfully"
-  log "Environment variables saved to toxiproxy.env"
+  log "Environment variables saved to toxiproxy-ci.env"
 }
 
 log "deploying nginx helm chart"
