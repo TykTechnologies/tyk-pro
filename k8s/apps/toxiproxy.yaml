@@ -1,60 +1,10 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: toxiproxy-config
-  namespace: tyk
-data:
-  proxies.json: |
-    [
-      {
-        "name": "dashboard",
-        "listen": "[::]:3000",
-        "upstream": "dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000",
-        "enabled": true
-      },
-      {
-        "name": "cp-gateway",
-        "listen": "[::]:8080",
-        "upstream": "gateway-svc-tyk-control-plane-tyk-gateway.tyk.svc:8080",
-        "enabled": true
-      },
-      {
-        "name": "mdcb",
-        "listen": "[::]:9091",
-        "upstream": "mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091",
-        "enabled": true
-      },
-      {
-        "name": "redis-cp",
-        "listen": "[::]:6379",
-        "upstream": "redis.tyk.svc:6379",
-        "enabled": true
-      },
-      {
-        "name": "redis-dp-1",
-        "listen": "[::]:8379",
-        "upstream": "redis.tyk-dp-1.svc:6379",
-        "enabled": true
-      },
-      {
-        "name": "redis-dp-2",
-        "listen": "[::]:9379",
-        "upstream": "redis.tyk-dp-2.svc:6379",
-        "enabled": true
-      },
-      {
-        "name": "mongo",
-        "listen": "[::]:27017",
-        "upstream": "mongo.tyk.svc:27017",
-        "enabled": true
-      }
-    ]
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: toxiproxy
   namespace: tyk
+  labels:
+    app: toxiproxy
 spec:
   replicas: 1
   selector:
@@ -66,67 +16,48 @@ spec:
         app: toxiproxy
     spec:
       containers:
-      - name: toxiproxy
-        image: ghcr.io/shopify/toxiproxy:2.5.0
-        args:
-        - "-host=0.0.0.0"
-        - "-config=/etc/toxiproxy/proxies.json"
-        ports:
-        - containerPort: 3000
-          name: dashboard
-        - containerPort: 8080
-          name: cp-gateway
-        - containerPort: 9091
-          name: mdcb
-        - containerPort: 6379
-          name: redis-cp
-        - containerPort: 8379
-          name: redis-dp-1
-        - containerPort: 9379
-          name: redis-dp-2
-        - containerPort: 27017
-          name: mongo
-        - containerPort: 8474
-          name: api
-        volumeMounts:
-        - name: config-volume
-          mountPath: /etc/toxiproxy
-      volumes:
-      - name: config-volume
-        configMap:
-          name: toxiproxy-config
+        - name: toxiproxy
+          image: ghcr.io/shopify/toxiproxy:2.5.0
+          args:
+            - "-host=0.0.0.0"
+          ports:
+            - containerPort: 8474
+              name: api
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: toxiproxy
   namespace: tyk
+  labels:
+    app: toxiproxy
 spec:
   selector:
     app: toxiproxy
   ports:
-  - name: dashboard
-    port: 3000
-    targetPort: dashboard
-  - name: cp-gateway
-    port: 8080
-    targetPort: cp-gateway
-  - name: mdcb
-    port: 9091
-    targetPort: mdcb
-  - name: redis-cp
-    port: 6379
-    targetPort: redis-cp
-  - name: redis-dp-1
-    port: 8379
-    targetPort: redis-dp-1
-  - name: redis-dp-2
-    port: 9379
-    targetPort: redis-dp-2
-  - name: mongo
-    port: 27017
-    targetPort: mongo
-  - name: api
-    port: 8474
-    targetPort: api
-  type: ClusterIP
+    - name: api
+      port: 8474
+      targetPort: api
+      protocol: TCP
+  # in our local dev env cluster, cloud-provider-kind maps LB public IP to host
+  type: LoadBalancer
