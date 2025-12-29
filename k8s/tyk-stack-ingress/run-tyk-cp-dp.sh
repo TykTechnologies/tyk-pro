@@ -326,7 +326,7 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
 
   helm upgrade --install redis tyk-helm/simple-redis -n "$(dp_namespace $i)" --wait
   kubectl label svc/redis -n "$(dp_namespace "$i")" tyk.io/component=redis --overwrite > /dev/null 2>&1
-  populateToxiProxy "$TOXIPROXY_URL"
+  populateToxiProxy "${TOXIPROXY_URL:-}"
 
   helm upgrade --install -n "$(dp_namespace "$i")" tyk-data-plane tyk-helm/tyk-data-plane -f ./manifests/data-plane-values.yaml \
     --set tyk-gateway.gateway.replicaCount=${i} \
@@ -339,7 +339,7 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
     --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.local" \
     --set tyk-gateway.gateway.ingress.className="nginx" --wait
   labelDataPlaneServices "$i"
-  populateToxiProxy "$TOXIPROXY_URL"
+  populateToxiProxy "${TOXIPROXY_URL:-}"
 
   log "----- Successfully installed tyk-data-plane in $(dp_namespace "$i") -----"
 done
