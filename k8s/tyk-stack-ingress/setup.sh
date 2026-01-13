@@ -80,6 +80,35 @@ check_prerequisites() {
 }
 
 ######################################
+# Sudo Access Check
+######################################
+check_sudo_access() {
+  # Check if we'll need sudo (k8s-hosts-controller requires it)
+  # Use -n for non-interactive check first
+  if ! sudo -n true 2>/dev/null; then
+    # Sudo would require password - warn user and validate now
+    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "This script requires sudo access to start k8s-hosts-controller"
+    warning "The controller manages /etc/hosts entries for K8s ingress"
+    warning ""
+    warning "You will be prompted for your password now"
+    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Validate sudo access (will prompt user if needed)
+    if ! sudo -v; then
+      err "Sudo access required but could not be acquired"
+      err "Please ensure you have sudo privileges"
+      exit 1
+    fi
+
+    log "Sudo access granted"
+  else
+    log "Sudo access available (no password required or already cached)"
+  fi
+}
+
+######################################
 # Main Deployment Flow
 ######################################
 main() {
@@ -95,6 +124,9 @@ main() {
 
   # Check prerequisites
   check_prerequisites
+
+  # Check sudo access early (before user walks away)
+  check_sudo_access
 
   # Create Kind cluster (idempotent)
   log ""

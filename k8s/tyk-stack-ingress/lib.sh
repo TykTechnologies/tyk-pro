@@ -115,12 +115,10 @@ kubectl_get_secret_value() {
   local key="${3:?key required}"
 
   local value
-  value=$(kubectl get secret \ 
-    --namespace "$namespace" "$secret_name" \
+  value=$(kubectl get secret --namespace "$namespace" "$secret_name" \
     -o jsonpath="{.data.$key}" 2>/dev/null | base64 --decode 2>/dev/null)
-
   if [[ $? -ne 0 ]]; then
-    err "Failed to retrieve secret $secret_name/$key from namespace $namespace"
+    err "Failed to retrieve secret \"$namespace/$secret_name\" field: $key"
     return 1
   fi
 
