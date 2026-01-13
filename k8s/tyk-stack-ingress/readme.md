@@ -114,11 +114,11 @@ This will instruct script to update the nginx to use LoadBalancer, and with the 
 `cloud-provider-kind` container, we'll have access to Ingresses locally via the given hosts in Ingress resource.
 
 **All Ingresses:**
-- Data Plane 1 Gateway: `chart-gw-dp-1.local`
-- Data Plane 2 Gateway: `chart-gw-dp-2.local`
-- Control Plane Gateway: `chart-gw.local`
-- Dashboard: `chart-dash.local`
-- MDCB: `chart-mdcb.local`
+- Data Plane 1 Gateway: `chart-gw-dp-1.test`
+- Data Plane 2 Gateway: `chart-gw-dp-2.test`
+- Control Plane Gateway: `chart-gw.test`
+- Dashboard: `chart-dash.test`
+- MDCB: `chart-mdcb.test`
 
 ### Accessing Services via curl
 Get the LoadBalancer IP and test all endpoints:
@@ -128,14 +128,14 @@ Get the LoadBalancer IP and test all endpoints:
 INGRESS_IP=$(kubectl -n tyk get service nginx-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 # Data Plane Gateways health checks
-curl -H "Host: chart-gw-dp-1.local" http://$INGRESS_IP/hello
-curl -H "Host: chart-gw-dp-2.local" http://$INGRESS_IP/hello
+curl -H "Host: chart-gw-dp-1.test" http://$INGRESS_IP/hello
+curl -H "Host: chart-gw-dp-2.test" http://$INGRESS_IP/hello
 
 # Control Plane Gateway health check
-curl -H "Host: chart-gw.local" http://$INGRESS_IP/hello
+curl -H "Host: chart-gw.test" http://$INGRESS_IP/hello
 
 # MDCB health check
-curl -H "Host: chart-mdcb.local" http://$INGRESS_IP/health
+curl -H "Host: chart-mdcb.test" http://$INGRESS_IP/health
 ```
 
 ## Using Task Commands
