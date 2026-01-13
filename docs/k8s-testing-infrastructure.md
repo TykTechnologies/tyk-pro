@@ -335,38 +335,104 @@ USER_API_SECRET=$(kubectl get secret -n tyk tyk-operator-conf \
 
 ## Development Workflow
 
+### Simplified Workflow (NEW)
+
+The unified setup scripts provide a simplified developer experience with a single command for both infrastructure setup and testing.
+
+#### Stage 1: One-Time Infrastructure Setup
+
+**Run this once at the start of your day:**
+
+```bash
+cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress
+
+# Deploy infrastructure (with or without Toxiproxy)
+./setup.sh              # Basic stack
+./setup.sh --toxiproxy  # With resilience testing tools
+```
+
+**What it does:**
+- Creates Kind cluster (idempotent - safe to run again)
+- Deploys Tyk control plane (Dashboard, MDCB, Gateway, Redis, MongoDB)
+- Deploys N data planes (default: 2)
+- Starts k8s-hosts-controller (manages /etc/hosts automatically)
+- Optionally deploys Toxiproxy for resilience testing
+
+**All operations are idempotent** - running multiple times is safe!
+
+#### Stage 2: Iterative Testing
+
+**Run this for every code change:**
+
+```bash
+cd /Users/buraksekili/projects/w1/tyk-analytics
+
+# Run API tests
+./scripts/k8k-test.sh test api
+
+# Run resilience tests
+./scripts/k8k-test.sh test resilience
+
+# Run with custom marker
+./scripts/k8k-test.sh test api --marker "dash_admin and not slow"
+```
+
+**What it does:**
+- Locates tyk-pro repository (env var, default path, or temp clone)
+- Ensures infrastructure is deployed (calls setup.sh if needed)
+- Builds Dashboard Docker image
+- Loads image into Kind cluster
+- Restarts Dashboard deployment
+- Runs pytest with specified markers
+
+**Quick iteration cycle:**
+1. Make code changes
+2. Run `./scripts/k8k-test.sh test api`
+3. See results in ~30-60 seconds
+
 ### Local Development Prerequisites
 
-1. **Required Tools**:
-   - Docker
-   - Kind (Kubernetes in Docker)
-   - kubectl
-   - Helm
-   - Python 3.x
-   - pytest
+#### Required Tools
+- Docker
+- Kind (Kubernetes in Docker)
+- kubectl
+- Helm (used by setup scripts)
+- Go 1.21+ (for building Dashboard)
+- Python 3.x
+- pytest
 
-2. **License Keys**:
-   - TYK_DB_LICENSEKEY (Dashboard)
-   - TYK_MDCB_LICENSEKEY (MDCB)
-   - Place in `k8s/tyk-stack-ingress/.env`
+#### License Keys
+Create `k8s/tyk-stack-ingress/.env`:
+```bash
+TYK_DB_LICENSEKEY=<dashboard-license>
+TYK_MDCB_LICENSEKEY=<mdcb-license>
+```
 
-3. **Hosts Controller** (macOS):
-   ```bash
-   cd /Users/buraksekili/projects/w1/k8s-hosts-controller
-   sudo ./k8s-hosts-controller
-   ```
+#### Optional: Set tyk-pro Location
+```bash
+# If tyk-pro is not in the default Go workspace
+export TYK_PRO_PATH=/path/to/tyk-pro
+```
 
 ### Running Tests Locally
 
-**Quick Start**:
+#### Quick Start (Recommended)
+
 ```bash
+# 1. Setup infrastructure (once)
 cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress
-./test-resilience-local.sh
+./setup.sh --toxiproxy
+
+# 2. Run tests (for each code change)
+cd /Users/buraksekili/projects/w1/tyk-analytics
+./scripts/k8k-test.sh test resilience
 ```
 
-**Manual Steps**:
+#### Manual Steps (Legacy)
+
 ```bash
 # 1. Create cluster
+cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress
 ./create-cluster.sh
 
 # 2. Deploy with Toxiproxy
@@ -379,6 +445,155 @@ source toxiproxy-ci.env
 cd /Users/buraksekili/projects/w1/tyk-analytics
 pytest -s -m resilience
 ```
+
+**Note**: The manual steps are still supported but the unified scripts are recommended for better developer experience.
+
+## New Architecture Overview
+
+The unified testing architecture consists of two primary scripts with clear separation of concerns:
+
+### Script Responsibilities
+
+#### tyk-pro/k8s/tyk-stack-ingress/setup.sh (Infrastructure)
+
+**Purpose**: Deploy complete K8s testing infrastructure
+
+**Interface**:
+```bash
+setup.sh [--toxiproxy]
+```
+
+**Responsibilities**:
+1. Validates prerequisites (Docker, kubectl, kind, licenses)
+2. Creates Kind cluster with cloud-provider-kind
+3. Deploys ingress-nginx with LoadBalancer support
+4. Starts k8s-hosts-controller via manager script
+5. Deploys Tyk control plane (Dashboard, MDCB, Gateway, Redis, MongoDB)
+6. Deploys N data planes (default: 2)
+7. Optionally deploys Toxiproxy for resilience testing
+
+**Key Features**:
+- Fully idempotent - safe to run multiple times
+- Uses existing scripts (create-cluster.sh, run-tyk-cp-dp.sh)
+- Checks if k8s-hosts-controller already running
+- Uses `helm upgrade --install` for all deployments
+- Clear warnings about cleanup procedures
+
+#### tyk-analytics/scripts/k8k-test.sh (Test Orchestration)
+
+**Purpose**: Orchestrate build, deploy, and test workflow
+
+**Interface**:
+```bash
+k8k-test.sh test api                    # All API tests
+k8k-test.sh test resilience             # Resilience tests
+k8k-test.sh test api --marker "dash_admin and not slow"  # Custom
+```
+
+**Responsibilities**:
+1. Locates tyk-pro repository (env var → default → temp clone)
+2. Ensures infrastructure is deployed (calls tyk-pro setup.sh)
+3. Calls build-dashboard.sh to construct Dashboard image
+4. Loads image into Kind cluster
+5. Restarts Dashboard deployment
+6. Waits for Dashboard to be ready
+7. Executes pytest with appropriate markers
+
+**Key Features**:
+- Auto-detects CI mode via `TYK_SETUP_CI` environment variable
+- CI mode: Pulls images from registry
+- Local mode: Builds and loads images
+- Logs which tyk-pro location is being used
+- Supports custom pytest markers for flexibility
+
+#### tyk-analytics/scripts/build-dashboard.sh (Image Builder)
+
+**Purpose**: Build and load Dashboard Docker image
+
+**Interface**:
+```bash
+build-dashboard.sh [image-tag]  # Default: dev
+```
+
+**Responsibilities**:
+1. Builds Dashboard binary using Makefile
+2. Creates Docker image with specified tag
+3. Loads image into Kind cluster
+4. Restarts Dashboard deployment to use new image
+5. Waits for rollout to complete
+
+**Key Features**:
+- Validates prerequisites (Docker, kind, Go)
+- Checks if Dashboard deployment exists before restarting
+- Configurable image name and tag
+- Comprehensive error handling
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Developer Workflow                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─────────────────┐      ┌────────────────────────────────┐ │
+│  │ tyk-pro         │      │ tyk-analytics                 │ │
+│  │                 │      │                               │ │
+│  │ setup.sh        │─────>│ k8k-test.sh                   │ │
+│  │ (Infrastructure)│      │ (Test Orchestrator)           │ │
+│  └─────────────────┘      └────────────────────────────────┘ │
+│           │                         │                        │
+│           │ calls                   │ calls                  │
+│           ▼                         ▼                        │
+│  ┌─────────────────┐      ┌────────────────────────────────┐ │
+│  │ create-cluster  │      │ build-dashboard.sh             │ │
+│  │ run-tyk-cp-dp   │      │ (Image Builder)                │ │
+│  │ k8s-hosts-ctl   │      └────────────────────────────────┘ │
+│  └─────────────────┘                  │                        │
+│           │                            │                        │
+│           │                            │ loads                  │
+│           ▼                            ▼                        │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │              Kind Cluster (K8s)                          │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │ │
+│  │  │ Control Plane│  │ Data Planes  │  │ Toxiproxy    │  │ │
+│  │  │ (Dashboard)  │  │ (Gateway)    │  │ (Optional)   │  │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│           │                            ▲                        │
+│           │ restarts                   │                        │
+│           ▼                            │                        │  ┌─────────────────┐
+│  ┌─────────────────────────────────────────────────────────┐ │  │                 │
+│  │              k8s-hosts-controller                       │ │  │    pytest       │
+│  │         (manages /etc/hosts)                            │ │  │  (Test Runner)  │
+│  └─────────────────────────────────────────────────────────┘ │  └─────────────────┘
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Benefits of New Architecture
+
+1. **Separation of Concerns**
+   - Infrastructure logic stays in tyk-pro
+   - Test logic stays in tyk-analytics
+   - Each repository owns its domain
+
+2. **Improved Developer Experience**
+   - Single command for infrastructure setup
+   - Single command for testing
+   - Automatic detection of CI vs local mode
+
+3. **Idempotency**
+   - All operations safe to run multiple times
+   - No need to remember current state
+
+4. **Reusability**
+   - Other projects can use tyk-pro infrastructure
+   - Test patterns apply to any Tyk component
+
+5. **Clear Communication**
+   - Well-defined interfaces (env vars, exit codes)
+   - Logs explain what's happening
+   - Error messages guide resolution
 
 ### Debugging Tips
 
