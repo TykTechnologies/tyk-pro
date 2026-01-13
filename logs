@@ -1,0 +1,1 @@
+kubectl logs -n tyk-dp-2 deployments/gateway-tyk-data-plane-tyk-gateway gateway-tyk-gateway

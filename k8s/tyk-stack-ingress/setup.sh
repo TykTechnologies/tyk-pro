@@ -128,9 +128,16 @@ main() {
   log ""
   log "Step 3: Starting k8s-hosts-controller..."
 
+  # Validate NUM_DATA_PLANES
+  local num_data_planes="${NUM_DATA_PLANES:-2}"
+  if [[ ! "$num_data_planes" =~ ^[0-9]+$ ]] || [[ "$num_data_planes" -lt 1 ]]; then
+    err "NUM_DATA_PLANES must be a positive integer (current: $num_data_planes)"
+    exit 1
+  fi
+
   # Build comma-separated list of namespaces
   local namespaces="tyk"
-  for i in $(seq 1 "${NUM_DATA_PLANES:-2}"); do
+  for i in $(seq 1 "$num_data_planes"); do
     namespaces="${namespaces},tyk-dp-${i}"
   done
 

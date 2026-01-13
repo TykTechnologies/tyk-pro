@@ -28,7 +28,7 @@ fi
 
 if [[ ${#errors[@]} -gt 0 ]]; then
   for err in "${errors[@]}"; do
-    error "$err"
+    err "$err"
   done
   exit 1
 fi
@@ -42,6 +42,8 @@ TOXIPROXY_WAIT_TIMEOUT="${TOXIPROXY_WAIT_TIMEOUT:-120s}"
 INGRESS_READY_TIMEOUT="${INGRESS_READY_TIMEOUT:-90s}"
 ENABLE_PUMP="${ENABLE_PUMP:-true}"
 TYK_PRO_ROOT="$(cd ../.. && pwd)"
+
+TYK_API_SECRET="352d20ee67be67f6340b4c0605b044b7"
 
 CP_NAMESPACE="tyk"
 DP_NAMESPACE_PREFIX="tyk-dp"
@@ -76,7 +78,7 @@ fi
 
 deployNginx() {
   NGINX_SVC_TYPE=${NGINX_SVC_TYPE:-"LoadBalancer"}
-  log "deploying nginx with $NGINX_SVC_TYPE type"
+  log "deploying nginx $NGINX_SVC_TYPE service"
 
   helm_quiet repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   helm_quiet repo add tyk-helm https://helm.tyk.io/public/helm/charts/
@@ -98,7 +100,6 @@ deployNginx() {
     --wait \
     --timeout="$NGINX_TIMEOUT"
   if [ $? -ne 0 ]; then
-    error "failed to install nginx"
     return 1
   fi
 
@@ -119,19 +120,18 @@ deployToxiProxy() {
   kubectl wait --namespace "$CP_NAMESPACE" --for=condition=available --timeout="$TOXIPROXY_WAIT_TIMEOUT" deployment/toxiproxy
 
   log "Waiting for Toxiproxy LoadBalancer IP..."
-  TOXIPROXY_IP=""
-  # Todo: add proper retry
-  for attempt in $(seq 1 30); do
-    TOXIPROXY_IP=$(kubectl get svc toxiproxy -n "$CP_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2> /dev/null || true)
-    if [ -n "$TOXIPROXY_IP" ]; then
-      break
-    fi
 
-    log "Attempt $attempt/30: Waiting for LoadBalancer IP..."
-    sleep 2
-  done
-
-  if [ -z "$TOXIPROXY_IP" ]; then
+  # Use helper function with retry logic
+  if ! TOXIPROXY_IP=$(wait_for_loadbalancer_ip "$CP_NAMESPACE" "toxiproxy" 30); then
+    err "Failed to get Toxiproxy LoadBalancer IP"
+    err "This usually means:"
+    err "  1. LoadBalancer service type is not supported in your cluster"
+    err "  2. MetalLB or cloud-provider is not configured"
+    err "  3. The toxiproxy service failed to deploy"
+    err ""
+    err "Debug commands:"
+    err "  kubectl get svc toxiproxy -n $CP_NAMESPACE"
+    err "  kubectl describe svc toxiproxy -n $CP_NAMESPACE"
     return 1
   fi
 
@@ -189,7 +189,7 @@ labelControlPlaneServices() {
 
 labelDataPlaneServices() {
   local dp_index="${1:?dp_index required}"
-  log "Labeling data plane $dp_index services for discovery..."
+  sublog "Labeling data plane $dp_index services for discovery..."
   local namespace
   namespace=$(dp_namespace "$dp_index")
 
@@ -202,12 +202,12 @@ populateToxiProxy() {
     return 0
   fi
 
-  log "Populating Toxiproxy proxies"
+  sublog "Populating Toxiproxy proxies"
   local toxiproxy_url="${1:?toxiproxy_url is required}"
 
   local cli_path="$TYK_PRO_ROOT/k8s/apps/toxiproxy-agent/cli.py"
   if [ ! -f "$cli_path" ]; then
-    error "toxiproxy-agent CLI not found at $cli_path"
+    suberr "toxiproxy-agent CLI not found at $cli_path"
     return 1
   fi
 
@@ -226,36 +226,36 @@ populateToxiProxy() {
     return 1
   fi
 
-  log "Toxiproxy configured successfully and environment variables are saved to toxiproxy-ci.env"
+  sublog "Toxiproxy configured successfully and environment variables are saved to toxiproxy-ci.env"
   cat toxiproxy-ci.env || true
 }
 
 deployNginx || {
-  error "failed to deploy nginx helm chart"
+  err "failed to deploy nginx helm chart"
   exit 1
 }
 
 # note that infra needs to be deployed before deploying and populating toxiproxy
 # since toxiproxy works as a proxy for infra workloads.
 deployControlPlaneRedis || {
-  error "failed to deploy redis"
+  err "failed to deploy redis"
   exit 1
 }
 
 deployMongo || {
-  error "failed to deploy mongo"
+  err "failed to deploy mongo"
   exit 1
 }
 
 if [ "$USE_TOXIPROXY" = "true" ]; then
   deployToxiProxy || {
-    error "failed to deploy toxiproxy"
+    err "failed to deploy toxiproxy"
     exit 1
   }
 
   log "Configuring toxiproxy for control plane dependencies (redis, mongo)..."
   populateToxiProxy "$TOXIPROXY_URL" || {
-    error "failed to populate toxiproxy"
+    err "failed to populate toxiproxy"
     exit 1
   }
 fi
@@ -308,17 +308,18 @@ helm_quiet upgrade --install -n "$CP_NAMESPACE" tyk-control-plane tyk-helm/tyk-c
   --wait \
   --atomic
 if [ $? -ne 0 ]; then
-  error "Failed to install tyk-control-plane"
+  err "Failed to install tyk-control-plane"
   exit 1
 fi
 
 labelControlPlaneServices
 
-# TODO: add retry until they are not empty. if they are empty, error
-export ORG_ID=$(kubectl get secret --namespace "$CP_NAMESPACE" tyk-operator-conf -o jsonpath="{.data.TYK_ORG}" | base64 --decode)
-export USER_API_KEY=$(kubectl get secret --namespace "$CP_NAMESPACE" tyk-operator-conf -o jsonpath="{.data.TYK_AUTH}" | base64 --decode)
+retrieve_control_plane_secrets || {
+  err "Failed to retrieve control plane secrets - cannot continue"
+  exit 1
+}
 
-log "Creating secret for data plane in tyk namespace"
+log "Deploying $NUM_DATA_PLANES Tyk Data planes..."
 
 # Install data planes in a loop
 for i in $(seq 1 "$NUM_DATA_PLANES"); do
@@ -331,18 +332,15 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
     DP_REDIS_URL="redis.$(dp_namespace "$i").svc:6379"
   fi
 
-  log "----- Installing tyk-data-plane in $(dp_namespace "$i") namespace -----"
-  log "----- Using Redis URL: ${DP_REDIS_URL} -----"
+  sublog "Installing tyk-data-plane in $(dp_namespace "$i") namespace"
 
   kubectl create namespace "$(dp_namespace "$i")" || true
 
-  # todo: configure tyk dataplane to use DP_REDIS_URL
   kubectl -n "$(dp_namespace "$i")" create secret generic tyk-data-plane-secret \
     --from-literal=orgId="$ORG_ID" \
     --from-literal=userApiKey="$USER_API_KEY" \
-    --from-literal=groupID="data-plane-${i}"
-  # TODO: this secret should not be encoded; instead it should be taken as input
-  --from-literal=APISecret="352d20ee67be67f6340b4c0605b044b7" \
+    --from-literal=groupID="data-plane-${i}" \
+    --from-literal=APISecret="$TYK_API_SECRET" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   helm_quiet upgrade --install redis tyk-helm/simple-redis -n "$(dp_namespace $i)" --wait
@@ -362,8 +360,22 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
   labelDataPlaneServices "$i"
   populateToxiProxy "${TOXIPROXY_URL:-}"
 
-  log "   Successfully installed tyk-data-plane in $(dp_namespace "$i")"
+  sublog "Successfully installed tyk-data-plane in $(dp_namespace "$i")"
 done
+
+# Start hosts controller for ingress hostname resolution
+log "Starting k8s-hosts-controller for automatic /etc/hosts management..."
+HOSTS_NAMESPACES="$CP_NAMESPACE"
+for i in $(seq 1 "$NUM_DATA_PLANES"); do
+  HOSTS_NAMESPACES+=",$(dp_namespace "$i")"
+done
+
+if ! start_hosts_controller "$HOSTS_NAMESPACES"; then
+  warning "Failed to start hosts controller"
+  warning "Ingress hostnames may not be accessible"
+  warning "You can start it manually with:"
+  warning "  sudo \$(find_k8s_hosts_controller) --namespaces $HOSTS_NAMESPACES"
+fi
 
 log "----- Creating $TOOLS_NAMESPACE namespace -----"
 kubectl create namespace "$TOOLS_NAMESPACE" || true
@@ -371,7 +383,7 @@ kubectl create namespace "$TOOLS_NAMESPACE" || true
 log "----- Installing httpbin app in $TOOLS_NAMESPACE namespace -----"
 kubectl apply -f ../apps/httpbin.yaml
 if [ $? -ne 0 ]; then
-  error "Failed to install httpbin app in $TOOLS_NAMESPACE namespace"
+  err "Failed to install httpbin app in $TOOLS_NAMESPACE namespace"
   exit 1
 fi
 log "httpbin app deployed successfully at httpbin.$TOOLS_NAMESPACE.svc:8080/get"
@@ -380,14 +392,14 @@ log "----- Installing k6 load testing resources in $TOOLS_NAMESPACE namespace --
 # Create ConfigMap from the external script file
 kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js -n "$TOOLS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 if [ $? -ne 0 ]; then
-  error "Failed to create k6 test script ConfigMap"
+  err "Failed to create k6 test script ConfigMap"
   exit 1
 fi
 
 # Apply the k6 deployment
 kubectl apply -f ../apps/k6.yaml
 if [ $? -ne 0 ]; then
-  error "Failed to install k6 load testing resources"
+  err "Failed to install k6 load testing resources"
   exit 1
 fi
 log "----- Successfully installed k6 load testing resources -----"
@@ -395,13 +407,13 @@ log "To run a test, use the run-k6-test-custom task with parameters"
 
 log "--> $0 Done"
 log ""
-## TODO: Read those dynamically via environment variables
 log "Services are accessible via:"
 log "  Dashboard:     http://chart-dash.test/"
 log "  Gateway (CP):  http://chart-gw.test/"
 log "  Gateway (DP1): http://chart-gw-dp-1.test/"
 log "  Gateway (DP2): http://chart-gw-dp-2.test/"
 log ""
-log "To stop the hosts controller: stopHostsController (or kill the process)"
-log "To cleanup /etc/hosts: sudo $HOSTS_CONTROLLER_PATH/k8s-hosts-controller --cleanup"
-log "Hosts controller logs: tail -f $HOSTS_CONTROLLER_LOG_FILE"
+log "Hosts controller is running and managing /etc/hosts entries"
+log "To check status: pgrep -f k8s-hosts-controller"
+log "To view logs: tail -f /tmp/k8s-hosts-controller.log"
+log "To cleanup /etc/hosts manually: sudo \$(find_k8s_hosts_controller) --cleanup"

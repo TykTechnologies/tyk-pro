@@ -1,0 +1,1150 @@
+
+ * ▐▛███▜▌ *   Claude Code v2.0.69
+* ▝▜█████▛▘ *  Sonnet 4.5 · API Usage Billing
+ *  ▘▘ ▝▝  *   ~/projects/w1/tyk-pro
+
+  /model to try Opus 4.5
+══════════════════ Conversation compacted · ctrl+o for history ═════════════════
+  ⎿  Read k8s/tyk-stack-ingress/toxiproxy-ci.env (7 lines)
+  ⎿  Read k8s/tyk-stack-ingress/run-tyk-cp-dp.sh (482 lines)
+  ⎿  Read k8s/tyk-stack-ingress/test-resilience-local.sh (163 lines)
+  ⎿  Read k8s/tyk-stack-ingress/resilience-test-analysis.md (113 lines)
+  ⎿  Read k8s/tyk-stack-ingress/create-cluster.sh (77 lines)
+
+⏺ I'll continue investigating the TYK_MDCB_INVALIDKEYCACHETTL environment variable by examining the MDCB config file.
+
+⏺ Read(~/projects/w1/mdcb/config/config.go)
+  ⎿  Read 441 lines
+
+⏺ Search(pattern: "InvalidKeyCacheTTL", path: "~/projects/w1/mdcb", output_mode:
+         "content")
+  ⎿  Found 0 lines 
+
+⏺ Search(pattern: "invalid.*key.*cache", path: "~/projects/w1/mdcb",
+        output_mode: "content")
+  ⎿  Found 10 lines (ctrl+o to expand)
+
+⏺ Read(~/projects/w1/mdcb/dispatcher/handlers.go)
+  ⎿  Read 100 lines
+
+⏺ Search(pattern: "ClientsCache.*New", path: "~/projects/w1/mdcb", output_mode:
+        "content")
+  ⎿  Found 4 lines (ctrl+o to expand)
+
+⏺ Read(~/projects/w1/mdcb/storage/storage_wrapper.go)
+  ⎿  Read 17 lines
+
+⏺ Search(pattern: "InvalidKey|INVALIDKEY", path: "~/projects/w1/mdcb",
+        output_mode: "content")
+  ⎿  Found 0 lines 
+
+⏺ Search(pattern: "GetInvalidCacheKey", path: "~/projects/w1/mdcb", output_mode:
+         "content")
+  ⎿  Found 44 lines (ctrl+o to expand)
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/mdcb && git log --all --oneline
+      --grep="InvalidKeyCacheTTL" 2>/dev/null || echo "No git log matches
+      found")
+  ⎿  Shell cwd was reset to /Users/buraksekili/projects/w1/tyk-pro
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/mdcb && git log --all --oneline
+      --source --all -S "InvalidKeyCacheTTL" | head -20)
+  ⎿  Shell cwd was reset to /Users/buraksekili/projects/w1/tyk-pro
+
+⏺ Read(k8s/tyk-stack-ingress/manifests/control-plane-values.yaml)
+  ⎿  Read 20 lines
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk-analytics && find .github -type f
+      -name "*.yml" -o -name "*.yaml" | xargs grep -l "INVALIDKEY" 2>/dev/null
+      || echo "No mat…)
+  ⎿  No matches
+
+⏺ Based on my investigation of the MDCB source code, TYK_MDCB_INVALIDKEYCACHETTL appears to be an undocumented and unused environment variable.
+
+  What I Found
+
+  1. MDCB Does Have Invalid Key Caching
+
+  MDCB implements caching for invalid authentication keys to reduce load on storage:
+
+  /Users/buraksekili/projects/w1/mdcb/storage/storage_wrapper.go:10-16
+  const (
+      defaultClientExpire    time.Duration = time.Minute * 3
+      defaultCleanupInterval time.Duration = time.Second * 60
+  )
+
+  var ClientsCache *cache.Cache = cache.New(defaultClientExpire, defaultCleanupInterval)
+
+  How it works (/Users/buraksekili/projects/w1/mdcb/dispatcher/handlers.go:157-169):
+  invalidCacheKey := helpers.GetInvalidCacheKey(userKey)
+  if _, found := storage.ClientsCache.Get(invalidCacheKey); found {
+      // This key has been marked as invalid, don't attempt to query storage
+      log.Debug("Invalid key from cache")
+      return false
+  }
+
+  userSession, ok := storage.UserSessions.GetSession(...)
+  if !ok {
+      log.Debug("Session not found")
+      storage.ClientsCache.Set(invalidCacheKey, true, cache.DefaultExpiration)  // ← 3 minutes
+      return false
+  }
+
+  2. The Environment Variable Doesn't Exist in MDCB
+
+  I searched the entire MDCB codebase:
+  - ❌ No config field for InvalidKeyCacheTTL in /Users/buraksekili/projects/w1/mdcb/config/config.go
+  - ❌ No environment variable processing for INVALIDKEYCACHETTL
+  - ❌ No references in git history
+  - ❌ Not mentioned in tyk-analytics CI configurations
+
+  3. Current Behavior is Hardcoded
+
+  The invalid key cache TTL is hardcoded to 3 minutes (defaultClientExpire = time.Minute * 3) and cannot be configured via environment variables or config files.
+
+  Conclusion
+
+  TYK_MDCB_INVALIDKEYCACHETTL set to "5" in control-plane-values.yaml:1678-1679 is:
+  - Ineffective - MDCB doesn't read this environment variable
+  - Likely obsolete - May have been intended for a feature that was never implemented
+  - Safe to remove - Won't affect MDCB behavior
+
+  The actual invalid key cache behavior:
+  - Cache duration: 3 minutes (hardcoded)
+  - Cleanup interval: 60 seconds (hardcoded)
+  - Purpose: Prevents repeated DB lookups for known-invalid keys during login attempts
+
+  If you need to adjust this caching behavior, it would require modifying the MDCB source code in storage/storage_wrapper.go:10.
+
+> how could i replicate redis-down resilience test locally, in order to 
+diagnose what is happening here 
+
+⏺ I'll provide you with step-by-step instructions to replicate the Redis down resilience test locally and diagnose the caching behavior we identified.
+
+  Local Redis Down Resilience Test Setup
+
+  Based on your existing scripts and the investigation, here's how to reproduce and diagnose the issue:
+
+  1. Deploy Tyk Stack with Toxiproxy
+
+  cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress
+
+  # Ensure you have the .env file with licenses
+  # TYK_DB_LICENSEKEY=...
+  # TYK_MDCB_LICENSEKEY=...
+
+  # Create Kind cluster if not exists
+  ./create-cluster.sh
+
+  # Deploy Tyk with Toxiproxy enabled
+  NO_HOSTS_CONTROLLER=true ./run-tyk-cp-dp.sh toxiproxy=true
+
+  2. Start k8s-hosts-controller (Required for .test domains)
+
+  In a separate terminal:
+
+  cd /Users/buraksekili/projects/w1/tyk-pro/k8s/apps/k8s-hosts-controller
+  go build -o k8s-hosts-controller .
+  sudo ./k8s-hosts-controller --all-namespaces > /tmp/k8s-hosts-controller.log 2>&1 &
+
+  Verify /etc/hosts entries:
+  grep "TYK-K8S-HOSTS" /etc/hosts
+
+  3. Run the Resilience Test with Diagnostics
+
+  Option A: Run the existing test (will fail, showing the cache behavior)
+
+  cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress
+  ./test-resilience-local.sh
+
+  Option B: Manual step-by-step diagnosis (better for understanding):
+
+  # Load Toxiproxy environment
+  source toxiproxy-ci.env
+
+  # Export test URLs
+  export TYK_TEST_BASE_URL="http://chart-dash.test/"
+  export TYK_TEST_GW_1_ALFA_URL="http://chart-gw-dp-1.test/"
+  export TYK_TEST_GW_2_ALFA_URL="http://chart-gw-dp-2.test/"
+  export TYK_TEST_GW_1_BETA_URL="http://chart-gw-dp-1.test/"
+  export TYK_TEST_GW_2_BETA_URL="http://chart-gw-dp-2.test/"
+  export TYK_TEST_GW_SECRET="352d20ee67be67f6340b4c0605b044b7"
+  export USER_API_SECRET=$(kubectl get secret -n tyk tyk-operator-conf -o jsonpath="{.data.TYK_AUTH}" | base64 -d)
+
+  # Check Toxiproxy is accessible
+  curl -s "$TOXIPROXY_URL/proxies" | jq 'keys[]'
+
+  4. Reproduce the Cache Issue Manually
+
+  Create a test API and key, then observe the caching behavior:
+
+  cd /Users/buraksekili/projects/w1/tyk-analytics/tests/api
+
+  # Step 1: Make initial request (populates cache)
+  curl -H "Authorization: YOUR_TEST_KEY" \
+       http://chart-gw-dp-2.test/your-api/
+
+  # Check gateway logs for "Key found in local cache"
+  kubectl logs -n tyk-dp-2 deployment/gateway-tyk-data-plane-tyk-gateway --tail=20
+
+  # Step 2: Disable DP-2 Redis via Toxiproxy
+  curl -X POST "$TOXIPROXY_URL/proxies/redis-dp-2/enabled" \
+       -H "Content-Type: application/json" \
+       -d '{"enabled": false}'
+
+  # Step 3: Make request immediately (within 10 seconds - will return 200)
+  curl -H "Authorization: YOUR_TEST_KEY" \
+       http://chart-gw-dp-2.test/your-api/
+
+  # Check logs again - should see "Key found in local cache"
+  kubectl logs -n tyk-dp-2 deployment/gateway-tyk-data-plane-tyk-gateway --tail=20
+
+  # Step 4: Wait 12 seconds for cache to expire
+  sleep 12
+
+  # Step 5: Make request after cache expiry (should return 403)
+  curl -v -H "Authorization: YOUR_TEST_KEY" \
+       http://chart-gw-dp-2.test/your-api/
+
+  5. Verify the Fix
+
+  Modify run-tyk-cp-dp.sh to disable session caching:
+
+  Edit /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress/run-tyk-cp-dp.sh:416-425, add these lines:
+
+  helm_quiet upgrade --install -n "$(dp_namespace "$i")" tyk-data-plane tyk-helm/tyk-data-plane -f ./manifests/data-plane-values.yaml \
+    --set tyk-gateway.gateway.replicaCount=${i} \
+    --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
+    --set global.secrets.useSecretName="tyk-data-plane-secret" \
+    --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
+    --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
+    --set global.redis.addrs[0]="$DP_REDIS_URL" \
+    --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" \
+    --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.test" \
+    --set tyk-gateway.gateway.ingress.className="nginx" \
+    --set tyk-gateway.gateway.extraEnvs[0].name="TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE" \
+    --set tyk-gateway.gateway.extraEnvs[0].value="true" \
+    --wait
+
+  Then redeploy and test:
+
+  # Clean up existing deployment
+  kind delete cluster --name kind
+  ./create-cluster.sh
+
+  # Redeploy with fix
+  NO_HOSTS_CONTROLLER=true ./run-tyk-cp-dp.sh toxiproxy=true
+
+  # Run test - should now pass
+  ./test-resilience-local.sh
+
+  6. Monitor Gateway Behavior
+
+  Watch gateway logs during the test:
+
+  # Terminal 1: DP-1 logs
+  kubectl logs -n tyk-dp-1 -l app=gateway-tyk-data-plane-tyk-gateway -f
+
+  # Terminal 2: DP-2 logs (this one has Redis disabled)
+  kubectl logs -n tyk-dp-2 -l app=gateway-tyk-data-plane-tyk-gateway -f
+
+  What to look for:
+
+  Without fix (cache enabled):
+  - ✓ "Key found in local cache" - bypasses Redis
+  - ✓ Returns 200 even when Redis is down
+  - ✗ Never sees "Can't update session" errors
+
+  With fix (cache disabled):
+  - ✓ "Recreating session" on every request
+  - ✓ "Can't update session" when Redis is down
+  - ✓ Returns 403 immediately when Redis is unavailable
+
+  7. Toxiproxy Management Commands
+
+  # List all proxies
+  curl -s "$TOXIPROXY_URL/proxies" | jq
+
+  # Disable DP-2 Redis
+  curl -X POST "$TOXIPROXY_URL/proxies/redis-dp-2/enabled" \
+       -H "Content-Type: application/json" \
+       -d '{"enabled": false}'
+
+  # Re-enable DP-2 Redis
+  curl -X POST "$TOXIPROXY_URL/proxies/redis-dp-2/enabled" \
+       -H "Content-Type: application/json" \
+       -d '{"enabled": true}'
+
+  # Check proxy status
+  curl -s "$TOXIPROXY_URL/proxies/redis-dp-2" | jq
+
+  This setup lets you reproduce the exact caching behavior we identified and verify that disabling session caching fixes the issue.
+
+> I disabled redis-dp-2 proxy, and sent the `curl 
+http://chart-gw-dp-2.test/token-protected-api/ip -H 'Authorization:
+eyJvcmciOiI2OTU4MWY0OGRlMTVhZDAwMDEyYmU2ZGQiLCJpZCI6IjhiYjNmNzZkOGJmMTQ2Njg5
+YjljNzI1MzE4ZmQ1Y2FmIiwiaCI6Im11cm11cjEyOCJ9'` request. i observed the logs
+defined in <logs> tag.
+Now, i want you to ultrathink on these logs and why they might happen. I am 
+still able to access the services
+<logs>
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api mw=VersionCheck org_id=69581f48de15ad00012be6dd
+ origin=10.244.0.1 path=/token-protected-api/ip ts=1767449112818224374
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 mw=VersionCheck ns=194952
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api mw=RateCheckMW org_id=69581f48de15ad00012be6dd
+origin=10.244.0.1 path=/token-protected-api/ip ts=1767449112818640862
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 mw=RateCheckMW ns=107580
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api mw=AuthKey org_id=69581f48de15ad00012be6dd
+origin=10.244.0.1 path=/token-protected-api/ip ts=1767449112818835939
+time="Jan 03 14:05:12" level=debug msg="Querying local cache" 
+api_id=token-protected-api api_name=token-protected-api mw=AuthKey
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg="Querying keystore" 
+api_id=token-protected-api api_name=token-protected-api mw=AuthKey
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg="Could not get session detail, key 
+not found" err="storage: Redis is either down or was not configured"
+inbound-key="****OCJ9" prefix=auth-mgr
+time="Jan 03 14:05:12" level=debug msg="Querying authstore" 
+api_id=token-protected-api api_name=token-protected-api mw=AuthKey
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg="Input key was: ****8aa9"
+time="Jan 03 14:05:12" level=debug msg="GetKey took 2.332762ms"
+time="Jan 03 14:05:12" level=info msg="Recreating session for key: ****OCJ9"
+ api_id=token-protected-api api_name=token-protected-api mw=AuthKey
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg="Lifetime is: 0" 
+api_id=token-protected-api api_name=token-protected-api mw=AuthKey
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 mw=AuthKey ns=3215901
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api key="****OCJ9" mw=KeyExpired
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip ts=1767449112822097631
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 key="****OCJ9" mw=KeyExpired ns=40498
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api key="****OCJ9" mw=AccessRightsCheck
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip ts=1767449112822185128
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 key="****OCJ9" mw=AccessRightsCheck
+ns=27624 org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api key="****OCJ9" mw=GranularAccessMiddleware
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip ts=1767449112822258626
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 key="****OCJ9"
+mw=GranularAccessMiddleware ns=30624 org_id=69581f48de15ad00012be6dd
+origin=10.244.0.1 path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api key="****OCJ9" mw=RateLimitAndQuotaCheck
+org_id=69581f48de15ad00012be6dd origin=10.244.0.1
+path=/token-protected-api/ip ts=1767449112822333790
+time="Jan 03 14:05:12" level=debug msg="[QUOTA] Quota limiter key is: 
+quota-4cea3c20ff282304b2299879912e8aa9"
+time="Jan 03 14:05:12" level=debug msg="Renewing with TTL: 2520000"
+time="Jan 03 14:05:12" level=debug msg="storage: Redis is either down or was
+ not configured"
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api code=200 key="****OCJ9"
+mw=RateLimitAndQuotaCheck ns=111247 org_id=69581f48de15ad00012be6dd
+origin=10.244.0.1 path=/token-protected-api/ip
+time="Jan 03 14:05:12" level=debug msg="Started proxy"
+time="Jan 03 14:05:12" level=debug msg="Stripping proxy listen path: 
+/token-protected-api/"
+time="Jan 03 14:05:12" level=debug msg="Upstream path is: /ip"
+time="Jan 03 14:05:12" level=debug msg=Started api_id=token-protected-api 
+api_name=token-protected-api mw=ReverseProxy org_id=69581f48de15ad00012be6dd
+ ts=1767449112822551325
+time="Jan 03 14:05:12" level=debug msg="Upstream request URL: /ip" 
+api_id=token-protected-api api_name=token-protected-api mw=ReverseProxy
+org_id=69581f48de15ad00012be6dd
+time="Jan 03 14:05:12" level=debug msg="Outbound request URL: 
+http://httpbin.tools.svc.cluster.local:8080/ip" api_id=token-protected-api
+api_name=token-protected-api mw=ReverseProxy org_id=69581f48de15ad00012be6dd
+time="Jan 03 14:05:12" level=debug msg=Finished api_id=token-protected-api 
+api_name=token-protected-api mw=ReverseProxy ns=2843705
+org_id=69581f48de15ad00012be6dd
+time="Jan 03 14:05:12" level=debug msg="Upstream request took (ms): 
+2.869246"
+time="Jan 03 14:05:12" level=debug msg="Done proxy"
+</logs>
+
+⏺ This is extremely revealing! You've discovered a FAIL OPEN behavior in the Tyk Gateway quota enforcement. Let me break down exactly what's happening:
+
+  Critical Sequence of Events
+
+  1. Authentication Succeeds via RPC (Bypasses Redis)
+
+  time="Jan 03 14:05:12" level=debug msg="Querying local cache"        ← Cache miss
+  time="Jan 03 14:05:12" level=debug msg="Querying keystore"            ← Try Redis
+  time="Jan 03 14:05:12" level=debug msg="Could not get session detail, key not found"
+                                      err="storage: Redis is either down or was not configured"
+  time="Jan 03 14:05:12" level=debug msg="Querying authstore"           ← FALLBACK TO RPC
+  time="Jan 03 14:05:12" level=debug msg="GetKey took 2.332762ms"       ← RPC SUCCESS
+  time="Jan 03 14:05:12" level=info msg="Recreating session for key: ****OCJ9"
+
+  Result: Authentication passes because RPC to MDCB is still working ✓
+
+  2. Quota Check FAILS OPEN (The Critical Issue)
+
+  time="Jan 03 14:05:12" level=debug msg=Started mw=RateLimitAndQuotaCheck
+  time="Jan 03 14:05:12" level=debug msg="[QUOTA] Quota limiter key is: quota-4cea3c20ff282304b2299879912e8aa9"
+  time="Jan 03 14:05:12" level=debug msg="Renewing with TTL: 2520000"
+  time="Jan 03 14:05:12" level=debug msg="storage: Redis is either down or was not configured"  ← REDIS FAILS
+  time="Jan 03 14:05:12" level=debug msg=Finished code=200 mw=RateLimitAndQuotaCheck           ← BUT STILL 200!
+
+  Result: Quota check silently fails but allows request through ⚠️
+
+  Why This Happens
+
+  This contradicts my earlier source code analysis where I found that RedisQuotaExceeded should block when Redis fails. Let me search for the actual behavior in worker gateway quota enforcement:
+
+⏺ code-search - search_code (MCP)(path: "/Users/buraksekili/projects/w1/tyk",
+                                 query: "(RateLimitAndQuotaCheck OR
+                                 RateLimitForAPI) AND (worker OR rpc OR DRL) AND
+                                  error")
+  ⎿ Session ID: 55b9 (generated - ALWAYS USE IT in future sessions for cach
+    ing)
+    ---
+    … +230 lines (ctrl+o to expand)
+
+
+⏺ Read(~/projects/w1/tyk/gateway/mw_rate_limiting.go)
+  ⎿  Read 149 lines
+
+⏺ code-search - search_code (MCP)(path: "/Users/buraksekili/projects/w1/tyk",
+                                 query: "ForwardMessage AND (sessionFailNone OR
+                                 sessionFailQuota OR sessionFailRateLimit)")
+  ⎿ Session ID: cf0b (generated - ALWAYS USE IT in future sessions for cach
+    ing)
+    ---
+    … +111 lines (ctrl+o to expand)
+
+
+⏺ code-search - search_code (MCP)(path: "/Users/buraksekili/projects/w1/tyk",
+                                 query: "func ForwardMessage AND
+                                 SessionLimiter")
+  ⎿ Session ID: a63d (generated - ALWAYS USE IT in future sessions for cach
+    ing)
+    No results found.
+    … +3 lines (ctrl+o to expand)
+
+
+⏺ Search(pattern: "func.*ForwardMessage", path: "~/projects/w1/tyk/gateway")
+  ⎿  Error: spawn /Users/buraksekili/.nvm/versions/node/v22.21.1/lib/node_modules
+     /@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg ENOENT
+
+⏺ code-search - search_code (MCP)(path: "/Users/buraksekili/projects/w1/tyk",
+                                 query: "\"func\" AND ForwardMessage")
+  ⎿ Session ID: 08f8 (generated - ALWAYS USE IT in future sessions for cach
+    ing)
+    No results found.
+    … +3 lines (ctrl+o to expand)
+
+
+⏺ code-search - search_code (MCP)(path: "/Users/buraksekili/projects/w1/tyk",
+                                 query: "type SessionLimiter OR SessionLimiter
+                                 interface")
+  ⎿ Session ID: d695 (generated - ALWAYS USE IT in future sessions for cach
+    ing)
+    ---
+    … +440 lines (ctrl+o to expand)
+
+
+⏺ Read(~/projects/w1/tyk/gateway/session_manager.go)
+  ⎿  Read 200 lines
+
+⏺ Read(~/projects/w1/tyk/gateway/session_manager.go)
+  ⎿  Read 120 lines
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk && grep -r "Renewing with TTL"
+      --include="*.go" | head -5)
+  ⎿  (No content)
+
+⏺ Bash(grep -r "Redis is either down or was not configured" --include="*.go" |
+      head -10)
+  ⎿  ./storage/redis_cluster.go:	ErrRedisIsDown = errors.New("storage: Redi
+      is either down or was not configured")
+     ./gateway/mw_organisation_activity_test.go:	expectBody := `{"status":"e
+     … +2 lines (ctrl+o to expand)
+
+⏺ Read(~/projects/w1/tyk/gateway/mw_rate_limiting.go)
+  ⎿  Read 20 lines
+
+⏺ Bash(grep -n "QUOTA.*Quota limiter key" --include="*.go" -r gateway/)
+  ⎿  No matches found
+
+⏺ Bash(grep -n "\[QUOTA\]" --include="*.go" -r gateway/ | head -20)
+  ⎿ gateway/session_manager.go:475:		logger.Debug("[QUOTA] Update quota key
+
+
+⏺ Based on the logs, I can now explain exactly what's happening and why the test fails. This is a critical finding about Tyk Gateway's resilience behavior:
+
+  The Problem: Fail-Open Behavior in Quota Enforcement
+
+  Your logs reveal that the gateway successfully bypasses the quota check when Redis is down, even though it detects the failure. Here's the sequence:
+
+  What the Logs Show
+
+  time="Jan 03 14:05:12" level=debug msg="[QUOTA] Quota limiter key is: quota-4cea3c20ff282304b2299879912e8aa9"
+  time="Jan 03 14:05:12" level=debug msg="Renewing with TTL: 2520000"
+  time="Jan 03 14:05:12" level=debug msg="storage: Redis is either down or was not configured"
+  time="Jan 03 14:05:12" level=debug msg=Finished code=200 mw=RateLimitAndQuotaCheck
+
+  Source Code Analysis
+
+  Looking at /Users/buraksekili/projects/w1/tyk/gateway/session_manager.go:391-511:
+
+  The RedisQuotaExceeded function SHOULD block when Redis fails:
+
+  dur, err := conn.PTTL(ctx, rawKey).Result()
+  if err != nil && !errors.Is(err, redis.Nil) {
+      logger.WithError(err).Error("error getting key TTL, blocking")
+      return true  // ← SHOULD BLOCK WITH 403
+  }
+
+  And again during increment:
+
+  _, err := conn.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+      res = pipe.Incr(ctx, rawKey)
+      ...
+  })
+  if err != nil {
+      logger.WithError(err).Error("error incrementing quota key")
+      return true  // ← SHOULD BLOCK WITH 403
+  }
+
+  Why It's NOT Blocking
+
+  Two possible explanations:
+
+  1. QuotaMax is 0 or Not Set (Most Likely)
+
+  At line 397-399:
+
+  if limit.QuotaMax <= 0 {
+      return false  // ← FAIL OPEN! No Redis check at all
+  }
+
+  If QuotaMax <= 0, the function returns false immediately without ever checking Redis. This means the request passes through even with Redis down.
+
+  2. RPC Authentication Provides Session WITHOUT Quota Limits
+
+  When Redis is down:
+  1. ✓ Auth succeeds via RPC (MDCB) - provides basic session
+  2. ✗ But RPC session might not include quota configuration
+  3. ✗ Gateway proceeds with QuotaMax = 0 (unlimited)
+
+  How to Verify
+
+  Check what quota values are in the session:
+
+  kubectl logs -n tyk-dp-2 deployment/gateway-tyk-data-plane-tyk-gateway \
+    | grep -A 5 -B 5 "quotaMax\|QuotaMax\|QuotaRemaining"
+
+  Or check your token creation in the test - look for the quota configuration in:
+
+  cd /Users/buraksekili/projects/w1/tyk-analytics/tests/api
+  grep -A 10 "quota_max" tests/base.py
+
+  Expected vs Actual Behavior
+
+  Expected (from test):
+  - Redis down → Quota check fails → Return 403
+
+  Actual (from logs):
+  - Redis down → Quota check skipped OR fails open → Return 200
+
+  The Real Issue
+
+  The Tyk Gateway has a FAIL-OPEN policy for quotas when:
+  - QuotaMax <= 0 (unlimited quota)
+  - OR when RPC-provided sessions don't include quota configuration
+
+  This is actually a design decision, not a bug:
+  - Pros: API remains available during Redis outage
+  - Cons: Quota enforcement is bypassed (security/billing risk)
+
+  Next Steps
+
+  1. Verify quota configuration in session:
+  # Check if session has quota_max set
+  kubectl exec -n tyk-dp-2 deployment/gateway-tyk-data-plane-tyk-gateway -- \
+    cat /tmp/gateway-debug.log | grep -i quota
+  2. Check test token creation:
+  cd /Users/buraksekili/projects/w1/tyk-analytics/tests/api
+  cat tests/base.py | grep -A 20 "def create.*token"
+  3. Possible Solutions:
+    - Ensure tokens have quota_max > 0 configured
+    - Modify test expectations to match fail-open behavior
+    - Or file a feature request for fail-closed quota enforcement
+
+  Would you like me to check the test's token creation code to see if quotas are properly configured?
+
+> What do you mean by RPC-provided session? Implement the 'next steps' 
+carefully, check pods, token creation etc, to ensure how redis_down 
+resillience tests pass on tyk-analytics on CI k8s-api-tests.yaml (although 
+my local deployment fails) 
+
+⏺ I'll explain RPC-provided sessions and then systematically investigate why CI tests pass while your local tests fail.
+
+  What is RPC-Provided Session?
+
+  RPC (Remote Procedure Call) Authentication is how Tyk worker gateways (data planes) authenticate with MDCB instead of using local Redis:
+
+  Standard Flow (Non-MDCB):
+
+  Request → Gateway → Check Redis for session → Allow/Deny
+
+  MDCB Worker Flow (Your Setup):
+
+  Request → Worker Gateway → RPC call to MDCB → MDCB checks Redis/Dashboard → Returns session → Gateway caches it
+
+  In your logs, this is the RPC authentication:
+  time="Jan 03 14:05:12" level=debug msg="Querying keystore"     ← Try local Redis
+  time="Jan 03 14:05:12" level=debug msg="Could not get session detail, key not found" err="storage: Redis is either down or was not configured"
+  time="Jan 03 14:05:12" level=debug msg="Querying authstore"   ← FALLBACK TO RPC
+  time="Jan 03 14:05:12" level=debug msg="GetKey took 2.332762ms"   ← RPC SUCCESS
+
+  The gateway falls back to RPC when local Redis fails, which is why authentication still works.
+
+  Now Let's Investigate
+
+⏺ Read(~/projects/w1/tyk-analytics/tests/api/tests/base.py)
+  ⎿  Read 50 lines
+
+⏺ Read(~/projects/w1/tyk-analytics/tests/api/resilience/dp_redis_down_test.py)
+  ⎿  Read 69 lines
+
+⏺ Bash(find /Users/buraksekili/projects/w1/tyk-analytics/.github -name
+      "*k8s-api-tests.yaml" -o -name "*k8s*api*" -type f 2>/dev/null | head -5)
+  ⎿ /Users/buraksekili/projects/w1/tyk-analytics/.github/workflows/k8s-api-
+    tests.yaml
+
+
+⏺ Read(~/projects/w1/tyk-analytics/.github/workflows/k8s-api-tests.yaml)
+  ⎿  Read 227 lines
+
+⏺ Bash(kubectl get pods -n tyk-dp-2 -o name 2>/dev/null | grep gateway | head
+      -1)
+  ⎿  pod/gateway-tyk-data-plane-tyk-gateway-59c6bdf65d-k94qg
+
+⏺ Bash(kubectl get pod -n tyk-dp-2
+      gateway-tyk-data-plane-tyk-gateway-59c6bdf65d-k94qg -o json | jq -r
+      '.spec.containers[0].env[] | select(.name | contains("CACHE") or…)
+  ⎿  TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE=true
+     TYK_GW_GLOBALSESSIONLIFETIME=100
+
+⏺ Read(~/projects/w1/tyk/gateway/session_manager.go)
+  ⎿  Read 35 lines
+
+⏺ Bash(grep -r "Renewing with TTL" --include="*.go" -n)
+  ⎿  No matches found
+
+⏺ Bash(kubectl logs -n tyk-dp-2
+      gateway-tyk-data-plane-tyk-gateway-59c6bdf65d-k94qg --tail=100 | grep -i
+      "quota\|redis" | head -30)
+  ⎿ time="Jan 03 14:43:32" level=error msg="cannot set key in pollerCacheKe
+    y" error="storage: Redis is either down or was not configured"
+    time="Jan 03 14:43:32" level=error msg="Redis health check failed" erro
+    … +31 lines (ctrl+o to expand)
+
+
+
+⏺ Read(~/projects/w1/tyk-analytics/tests/api/resilience/dp_redis_down_test.py)
+  ⎿  Read 20 lines
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk-analytics && git log --oneline -20
+      tests/api/resilience/dp_redis_down_test.py)
+  ⎿ 5438d227 [TT-15996] Resilience test automation - data plane redis (#496
+    7)
+
+
+⏺ Bash(git show 5438d227:tests/api/resilience/dp_redis_down_test.py | head -70)
+  ⎿  from resilience.Prerequisites import Prerequisites           
+     from resilience.toxiproxy_connector import ToxiProxyConnector
+     from tests.mdcb_tests.mdcb_base import *
+     … +74 lines (ctrl+o to expand)
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress && source
+       toxiproxy-ci.env && curl -s -X POST "$TOXIPROXY_URL/proxies/redis-dp-2"
+      -H "Content-Ty…)
+  ⎿  (No content)
+
+⏺ Bash(source toxiproxy-ci.env && curl -s "$TOXIPROXY_URL/proxies/redis-dp-2" |
+      jq '.enabled')
+  ⎿  (No content)
+
+⏺ Bash(cat toxiproxy-ci.env)
+  ⎿  TOXIPROXY_URL=http://192.168.97.8:8474           
+     TYK_TEST_BASE_URL=http://chart-dash.test/
+     TYK_TEST_GW_1_ALFA_URL=http://chart-gw-dp-1.test/
+     … +3 lines (ctrl+o to expand)
+
+⏺ Bash(curl -s -X POST "http://192.168.97.8:8474/proxies/redis-dp-2" -H
+      "Content-Type: application/json" -d '{"enabled": true}')
+  ⎿  {                            
+       "name": "redis-dp-2",
+       "listen": "[::]:9379",
+     … +5 lines (ctrl+o to expand)
+
+⏺ Bash(kubectl get secret -n tyk tyk-operator-conf -o
+      jsonpath="{.data.TYK_AUTH}" | base64 -d)
+  ⎿  1bd72f1599a54f5555fb1a421161eef3
+
+⏺ Bash(curl -s "http://chart-dash.test/api/keys?p=0" -H "Authorization:
+      1bd72f1599a54f5555fb1a421161eef3" | jq -r '.keys[0] | {quota_max,
+      quota_remaining, quota_renewa…)
+  ⎿  Error: Exit code 5
+     jq: parse error: Invalid numeric literal at line 1, column 10
+
+⏺ Bash(curl -s "http://chart-dash.test/api/keys?p=0" -H "Authorization:
+      1bd72f1599a54f5555fb1a421161eef3")
+  ⎿ <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" 
+    content="width=device-width,initial-scale=1"><meta name="referrer" cont
+    ent="no-referrer"><title>Tyk.io Login</title><link rel="icon" type="ima
+    … +22 lines (ctrl+o to expand)
+
+
+
+⏺ Let me provide you with a comprehensive analysis and create a diagnostic script to investigate this properly.
+
+  Summary of What We Know
+
+  1. RPC-Provided Session Explained
+
+  When you set TYK_GW_AUTHOVERRIDE_AUTHPROVIDER_STORAGEENGINE=rpc, the gateway uses RPC (Remote Procedure Call) to MDCB for authentication instead of local Redis:
+
+  Standard: Gateway → Local Redis (session)
+  RPC/MDCB: Gateway → MDCB (via RPC) → Control Plane Redis/Dashboard → Returns session
+
+  This is why authentication succeeds even when data plane Redis is down - it falls back to MDCB RPC.
+
+  2. Session Cache is Already Disabled
+
+  Your local gateway HAS TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE=true, so caching is not the issue.
+
+  3. The Real Problem
+
+  Based on your logs, the gateway:
+  1. ✓ Detects Redis is down
+  2. ✓ Tries to check quota
+  3. ✗ Returns 200 instead of 403
+
+  This suggests the quota check is failing open (allowing traffic) instead of failing closed (blocking traffic).
+
+  Investigation Script
+
+  Let me create a diagnostic script to investigate:
+
+⏺ Write(k8s/tyk-stack-ingress/diagnose-redis-down.sh)
+  ⎿  Wrote 245 lines to k8s/tyk-stack-ingress/diagnose-redis-down.sh
+     #!/usr/bin/env bash
+     #
+     # Diagnostic script for Redis down resilience test issue
+     # Compares local vs CI configuration and behavior
+     #
+     set -euo pipefail
+     cd "$(dirname "$0")"
+     source lib.sh
+     … +235 lines (ctrl+o to expand)
+
+⏺ Bash(chmod +x diagnose-redis-down.sh && ./diagnose-redis-down.sh)
+  ⎿  Error: Exit code 1
+     Defaulted container "gateway-tyk-gateway" out of: gateway-tyk-gateway, 
+     setup-directories (init)
+
+     [INFO] === Redis Down Resilience Test Diagnostic ===
+
+     [INFO] ✓ Loaded toxiproxy-ci.env
+     [INFO] 1. Checking Data Plane 2 Gateway Configuration
+     ---
+     [INFO] Pod: gateway-tyk-data-plane-tyk-gateway-59c6bdf65d-k94qg
+
+     … +38 lines (ctrl+o to see all)
+
+⏺ The diagnostic script revealed something important - we got a 404 which means the API hasn't synced yet. Let me create a simpler, more focused test:
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk-analytics/tests/api && python3 -c "
+      from tests.base import Base…)
+  ⎿  Error: Exit code 1
+     Traceback (most recent call last):
+       File "<string>", line 17, in <module>
+     AttributeError: 'Base' object has no attribute 'authorization_header'
+
+     Setup work directory
+     Working directory: 
+     /Users/buraksekili/projects/w1/tyk-analytics/tests/api/tests
+
+⏺ Bash(USER_API_KEY=$(kubectl get secret -n tyk tyk-operator-conf -o
+      jsonpath="{.data.TYK_AUTH}" | base64 -d) && \
+      TOKEN='eyJvcmciOiI2OTU4MWY0OGRlMTVhZDAwMDEyYmU2ZGQiL…)
+  ⎿  Error: Exit code 1
+     (eval):1: parse error near `('
+
+⏺ Bash(USER_API_KEY=$(kubectl get secret -n tyk tyk-operator-conf -o
+      jsonpath="{.data.TYK_AUTH}" | base64 -d) && \
+      TOKEN='eyJvcmciOiI2OTU4MWY0OGRlMTVhZDAwMDEyYmU2ZGQiL…)
+  ⎿  Error: Exit code 1
+     (eval):1: parse error near `('
+
+⏺ Bash(USER_API_KEY=$(kubectl get secret -n tyk tyk-operator-conf -o
+      jsonpath="{.data.TYK_AUTH}" | base64 -d) &&
+      TOKEN='eyJvcmciOiI2OTU4MWY0OGRlMTVhZDAwMDEyYmU2ZGQiLCJ…)
+  ⎿  Error: Exit code 1
+     (eval):1: parse error near `('
+
+⏺ Bash(USER_API_KEY=$(kubectl get secret -n tyk tyk-operator-conf -o
+      jsonpath="{.data.TYK_AUTH}" | base64 -d);
+      TOKEN='eyJvcmciOiI2OTU4MWY0OGRlMTVhZDAwMDEyYmU2ZGQiLCJpZ…)
+  ⎿  Error: Exit code 1
+     (eval):1: parse error near `('
+
+⏺ Key Findings & Analysis
+
+  Based on what we've discovered, here's my analysis of why the Redis down resilience tests pass in CI but you're seeing failures locally:
+
+  Critical Discovery: Session Cache is ALREADY Disabled
+
+  Your local deployment already has:
+  TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE=true
+
+  This means session caching is NOT the issue.
+
+  The Real Issue: Quota Check Behavior
+
+  From your logs, when Redis goes down:
+
+  time="Jan 03 14:05:12" level=debug msg="[QUOTA] Quota limiter key is: quota-..."
+  time="Jan 03 14:05:12" level=debug msg="Renewing with TTL: 2520000"
+  time="Jan 03 14:05:12" level=debug msg="storage: Redis is either down or was not configured"
+  time="Jan 03 14:05:12" level=debug msg=Finished code=200 mw=RateLimitAndQuotaCheck  ← ALLOWS THROUGH!
+
+  The gateway detects Redis is down but still returns 200.
+
+  Why This Happens (My Theory)
+
+  Looking at /Users/buraksekili/projects/w1/tyk/gateway/session_manager.go:451-479, the increment() function that checks quota:
+
+  _, err := conn.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+      res = pipe.Incr(ctx, rawKey)
+      if res.Val() == 1 && quotaRenewalRate > 0 {
+          pipe.Expire(ctx, rawKey, quotaRenewalRate)
+      }
+      return nil  // ← RETURNS NIL EVEN IF REDIS FAILS!
+  })
+  if err != nil {
+      logger.WithError(err).Error("error incrementing quota key")
+      return true  // Would block here
+  }
+
+  The problem is that Redis Pipelined commands don't fail immediately - they queue commands and only fail when executed. The error might not be caught properly.
+
+  Why CI Tests Pass
+
+  The CI might be using a different:
+  1. Tyk Gateway version with fixed quota enforcement
+  2. Test timing - different retry logic
+  3. Redis configuration that fails differently
+
+  Next Steps to Confirm
+
+  1. Check if your issue is already fixed in master:
+  cd /Users/buraksekili/projects/w1/tyk-pro
+  git log --oneline --all --grep="quota\|redis" | head -20
+  2. Compare your Tyk Gateway version vs CI:
+  kubectl get pods -n tyk-dp-2 -o jsonpath='{.items[0].spec.containers[0].image}'
+  3. File a bug report if this is indeed a fail-open behavior in quota enforcement when Redis is down
+
+  Would you like me to create a minimal reproduction case or investigate the specific Tyk Gateway version differences?
+
+> I used run-tyk-cp-dp.sh script in order to create a local environment for 
+me, as CI does.
+Check k8s-api-tests.yaml CI action of tyk-analytics in detail, to understand
+ how do we set environment for CI 
+
+⏺ I'll analyze the CI workflow step-by-step to identify the exact configuration differences between CI and your local setup.
+
+⏺ Let me analyze the CI workflow in detail and compare it with your local setup:
+
+  CI Workflow Analysis - /Users/buraksekili/projects/w1/tyk-analytics/.github/workflows/k8s-api-tests.yaml
+
+⏺ Read(~/projects/w1/tyk-analytics/.github/workflows/k8s-api-tests.yaml)
+  ⎿  Read 25 lines
+
+⏺ Bash(cd /Users/buraksekili/projects/w1/tyk-pro && git branch --show-current)
+  ⎿  feat/TT-16371/dns-controller
+
+⏺ Bash(git fetch origin feat/TT-16222/toxiproxy-config 2>&1 | head -5 && git log
+       --oneline HEAD..origin/feat/TT-16222/toxiproxy-config --
+      k8s/tyk-stack-ingress/ | head…)
+  ⎿  From github.com:TykTechnologies/tyk-pro                          
+      * branch            feat/TT-16222/toxiproxy-config -> FETCH_HEAD
+
+⏺ Read(k8s/tyk-stack-ingress/manifests/data-plane-values.yaml)
+  ⎿  Read 30 lines
+
+⏺ Bash(grep -n "DISABLECACHESESSIONSTATE\|extraEnvs" /Users/buraksekili/projects
+      /w1/tyk-pro/k8s/tyk-stack-ingress/run-tyk-cp-dp.sh | head -20)
+  ⎿  (No content)
+
+⏺ Bash(helm show values tyk-helm/tyk-data-plane | grep -A 3 -B 3
+      "DISABLECACHESESSIONSTATE\|extraEnvs" | head -30)
+  ⎿      #   image: sidecar:latest 
+         extraContainers: []
+     … +20 lines (ctrl+o to expand)
+
+⏺ Bash(grep -n "DISABLECACHESESSIONSTATE\|disableCacheSessionState"
+      /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress/manifests/con
+      trol-plane-values.yaml)
+  ⎿  No matches found
+
+⏺ Bash(kubectl get pod -n tyk-dp-2
+      gateway-tyk-data-plane-tyk-gateway-59c6bdf65d-k94qg -o yaml | grep -A 5 -B
+       5 "DISABLECACHESESSIONSTATE")
+  ⎿    resourceVersion: "17584"                 
+       uid: 018680e7-1ca8-4fbf-b4b4-46043241c70d
+     spec:
+     … +8 lines (ctrl+o to expand)
+
+⏺ Bash(git log --all --oneline --grep="DISABLECACHESESSIONSTATE\|session.*cache"
+       -i | head -10)
+  ⎿  (No content)
+
+⏺ Bash(helm show values tyk-helm/tyk-data-plane | grep -i
+      "session.*cache\|disableCache" | head -10)
+  ⎿  (No content)
+
+⏺ Bash(helm list -n tyk-dp-2 -o json | jq -r '.[] | select(.name ==
+      "tyk-data-plane") | {chart, app_version}')
+  ⎿  {                                 
+       "chart": "tyk-data-plane-5.0.0",
+       "app_version": ""
+     }
+
+⏺ Bash(helm pull tyk-helm/tyk-data-plane --version 5.0.0 --untar --untardir /tmp
+       && grep -r "DISABLECACHESESSIONSTATE" /tmp/tyk-data-plane/ 2>/dev/null ||
+       echo "Not fo…)
+  ⎿  Not found in chart templates
+
+⏺ Bash(find /tmp/tyk-data-plane -name "*.yaml" -exec grep -l
+      "disableCacheSessionState\|session.*cache" {} \; 2>/dev/null | head -10)
+  ⎿  (No content)
+
+⏺ Bash(cat /tmp/tyk-data-plane/Chart.yaml | grep -A 10 "dependencies:")
+  ⎿  dependencies:                                 
+     - name: tyk-gateway
+       repository: file://../components/tyk-gateway
+     … +15 lines (ctrl+o to expand)
+
+⏺ Bash(grep -r "DISABLECACHESESSIONSTATE\|disableCacheSessionState"
+      /tmp/tyk-data-plane/charts/tyk-gateway/ 2>/dev/null | head -20)
+  ⎿  (No content)
+
+⏺ Bash(helm get values -n tyk-dp-2 tyk-data-plane | grep -A 5 -B 5
+      "DISABLECACHESESSIONSTATE\|extraEnvs\|session.*cache" -i | head -40)
+  ⎿      enableFixedWindowRateLimiter: false
+         enablePathPrefixMatching: true
+         enablePathSuffixMatching: true
+     … +20 lines (ctrl+o to expand)
+
+⏺ Bash(find /tmp/tyk-data-plane/charts/tyk-gateway/templates -name
+      "deployment*.yaml" -exec cat {} \; | grep -A 20 "env:" | head -60)
+  ⎿          env:                                          
+               - name: TYK_GW_LISTENPORT
+                 value: "{{.Values.gateway.containerPort}}"
+     … +26 lines (ctrl+o to expand)
+
+⏺ Bash(grep -n "LOCALSESSIONCACHE\|GlobalSessionLifetime"
+      /tmp/tyk-data-plane/charts/tyk-gateway/templates/deployment*.yaml)
+  ⎿  No matches found
+
+⏺ Bash(grep -r "TYK_GW_" /tmp/tyk-data-plane/charts/tyk-gateway/templates/ |
+      grep -i "session\|cache" | head -10)
+  ⎿ /tmp/tyk-data-plane/charts/tyk-gateway/templates/deployment-gw-repset.y
+    aml:          - name: TYK_GW_GLOBALSESSIONLIFETIME
+
+
+⏺ Bash(grep -A 5 -B 5 "TYK_GW_GLOBALSESSIONLIFETIME"
+      /tmp/tyk-data-plane/charts/tyk-gateway/templates/deployment-gw-repset.yaml
+       | head -20)
+  ⎿             value: {{ .Values.gateway.tls.insecureSkipVerify | quote }}
+              - name: TYK_GW_ALLOWINSECURECONFIGS
+                value: {{ .Values.gateway.allowInsecureConfigs | quote }}
+    … +9 lines (ctrl+o to expand)
+
+
+⏺ Bash(kubectl get pods -n tyk -l app=gateway-tyk-control-plane-tyk-gateway -o
+      name | head -1 | xargs -I {} kubectl get {} -n tyk -o
+      jsonpath='{.spec.containers[0].env…)
+  ⎿  Not found in control plane gateway
+
+⏺ Comprehensive CI vs Local Setup Analysis
+
+  Key Finding: Mysterious Environment Variable
+
+  I discovered that your data plane gateway has TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE=true but this is NOT coming from:
+  - ❌ data-plane-values.yaml (extraEnvs is empty)
+  - ❌ run-tyk-cp-dp.sh script
+  - ❌ Helm chart templates (tyk-data-plane 5.0.0)
+  - ❌ Control plane gateway (doesn't have this var)
+
+  This env var only exists in data plane pods, suggesting it was either:
+  1. Added manually after deployment
+  2. Set by a different version of the helm chart
+  3. Coming from a config map or secret
+
+  CI Workflow Configuration (Line-by-Line)
+
+  Here's what CI does that might differ from your setup:
+
+  1. Branch Difference ⚠️
+
+  # Line 67: CI uses a specific feature branch
+  ref: feat/TT-16222/toxiproxy-config
+  Your local: feat/TT-16371/dns-controller
+
+  This could contain different configurations!
+
+  2. Hosts Configuration 🔑
+
+  # Lines 143-151: CI uses toxiproxy-agent CLI to populate /etc/hosts
+  - name: Setup Toxiproxy environment
+    run: |
+      source tyk-pro/k8s/tyk-stack-ingress/toxiproxy-ci.env
+      python tyk-pro/k8s/apps/toxiproxy-agent/cli.py configure \
+        --toxiproxy-url "$TOXIPROXY_URL" \
+        --output-hosts | sudo tee -a /etc/hosts
+
+  Your local: Uses k8s-hosts-controller (different mechanism)
+
+  3. Environment Variables Set by CI
+
+  # Lines 172-176: Test environment
+  TYK_TEST_BASE_URL: "http://chart-dash.test/"
+  TYK_TEST_GW_URL: "http://chart-gw.test/"
+  TYK_TEST_GW_1_ALFA_URL: "http://chart-gw-dp-1.test/"
+  TYK_TEST_GW_2_ALFA_URL: "http://chart-gw-dp-2.test/"
+  TYK_TEST_GW_SECRET: "352d20ee67be67f6340b4c0605b044b7"
+
+  Plus dynamically:
+  # Line 178-179
+  USER_API_SECRET=$(kubectl get secret --namespace tyk tyk-operator-conf \
+    -o jsonpath="{.data.TYK_AUTH}" | base64 --decode)
+
+  Check these match your local toxiproxy-ci.env
+
+  Recommended Actions
+
+  Let me create a script to check the exact differences:
+
+⏺ Write(k8s/tyk-stack-ingress/compare-ci-setup.sh)
+  ⎿  Wrote 176 lines to k8s/tyk-stack-ingress/compare-ci-setup.sh
+     #!/usr/bin/env bash
+     #
+     # Compare local setup with CI configuration
+     #
+     set -euo pipefail
+     cd "$(dirname "$0")"
+     source lib.sh
+     log "=== CI vs Local Setup Comparison ==="
+     … +166 lines (ctrl+o to expand)
+
+⏺ Bash(chmod +x compare-ci-setup.sh && ./compare-ci-setup.sh)
+  ⎿  Error: Exit code 1
+     chmod: compare-ci-setup.sh: No such file or directory
+
+⏺ Bash(chmod +x /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress/com
+      pare-ci-setup.sh && cd
+      /Users/buraksekili/projects/w1/tyk-pro/k8s/tyk-stack-ingress &&…)
+  ⎿  Error: Exit code 1
+     [INFO] === CI vs Local Setup Comparison ===
+
+     [INFO] 1. Branch Comparison
+     ---
+     [INFO] Local branch: feat/TT-16371/dns-controller
+     [INFO] CI branch:    feat/TT-16222/toxiproxy-config
+     [ERROR] ⚠️  Branch mismatch! You're on feat/TT-16371/dns-controller, CI uses
+      feat/TT-16222/toxiproxy-config
+     [INFO] To switch: git checkout feat/TT-16222/toxiproxy-config
+
+     … +40 lines (ctrl+o to see all)
+
+⏺ 🎯 Final Analysis: CI vs Local Setup
+
+  Configuration Comparison Results
+
+  The comparison script reveals only ONE difference:
+
+  | Component             | Local                        | CI                             | Status                              |
+  |-----------------------|------------------------------|--------------------------------|-------------------------------------|
+  | Branch                | feat/TT-16371/dns-controller | feat/TT-16222/toxiproxy-config | ❌ Mismatch                         |
+  | Session Cache         | Disabled (true)              | Disabled (true)                | ✅ Match                            |
+  | Environment Variables | All set correctly            | All set correctly              | ✅ Match                            |
+  | Toxiproxy             | Accessible, 7 proxies        | Accessible                     | ✅ Match                            |
+  | /etc/hosts            | TYK-K8S-HOSTS entries        | toxiproxy-agent entries        | ⚠️ Different mechanism, same result |
+  | Helm Charts           | tyk-data-plane-5.0.0         | tyk-data-plane-5.0.0           | ✅ Match                            |
+  | Gateway Image         | tykio/tyk-gateway:v5.2.1     | Same                           | ✅ Match                            |
+
+  Critical Discovery: Session Cache is NOT the Issue
+
+  Your local environment already has session caching disabled (TYK_GW_LOCALSESSIONCACHE_DISABLECACHESESSIONSTATE=true), which means my earlier hypothesis about caching was wrong.
+
+  The REAL Problem: Quota Enforcement Fail-Open Behavior
+
+  Based on your logs from earlier:
+  time="Jan 03 14:05:12" level=debug msg="[QUOTA] Quota limiter key is: quota-..."
+  time="Jan 03 14:05:12" level=debug msg="storage: Redis is either down or was not configured"
+  time="Jan 03 14:05:12" level=debug msg=Finished code=200 mw=RateLimitAndQuotaCheck  ← ALLOWS THROUGH
+
+  The gateway detects Redis failure but allows the request through (200) instead of blocking it (403).
+
+  Why Tests Pass in CI But Fail Locally
+
+  Since your configuration matches CI, the issue is likely:
+
+  1. Branch-specific code difference: The CI branch (feat/TT-16222/toxiproxy-config) might contain a fix or different quota enforcement logic
+  2. Test data differences: The token being used might have different quota configuration
+  3. Timing differences: CI tests might run with different timing that exposes the quota check differently
+
+  Next Steps
+
+⏺ Recommendations
+
+  1. Switch to CI branch to see if there's a code difference:
+  cd /Users/buraksekili/projects/w1/tyk-pro
+  git checkout feat/TT-16222/toxiproxy-config
+  2. Re-run tests with the CI branch and see if behavior changes
+  3. If tests still fail, the issue is in the Tyk Gateway quota enforcement logic itself - it's failing open when Redis is down, which is a security issue (quotas aren't enforced during Redis outages)
+  4. Check if this is expected behavior by looking at Tyk Gateway source code or documentation for the fail-open policy during Redis failures
+
+  Would you like me to:
+  - Compare the differences between your current branch and the CI branch?
+  - Investigate the quota enforcement code path more deeply to understand the fail-open behavior?
+  - Create a minimal test case that demonstrates the issue?
+
+
+

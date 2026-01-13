@@ -339,7 +339,7 @@ tyk-gateway:
 
         # ingress rules
         hosts:
-          - host: chart-example-control-api-domain.local
+          - host: chart-example-control-api-domain.test
             paths:
               - path: /
                 pathType: Prefix
@@ -347,7 +347,7 @@ tyk-gateway:
         # tls configuration for ingress
         #  - secretName: chart-example-tls
         #    hosts:
-        #      - chart-example-different-domain-possible.local
+        #      - chart-example-different-domain-possible.test
         tls: []
 
     # Creates an ingress object in k8s. Will require an ingress-controller and
@@ -364,7 +364,7 @@ tyk-gateway:
 
       # ingress rules
       hosts:
-        - host: chart-gw-dp.local
+        - host: chart-gw-dp.test
           paths:
             - path: /
               pathType: Prefix
@@ -372,7 +372,7 @@ tyk-gateway:
       # tls configuration for ingress
       #  - secretName: chart-example-tls
       #    hosts:
-      #      - chart-example.local
+      #      - chart-example.test
       tls: []
 
     # PodDisruptionBudget configuration
