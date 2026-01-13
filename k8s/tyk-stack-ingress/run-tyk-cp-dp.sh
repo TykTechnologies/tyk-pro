@@ -336,7 +336,7 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
     --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
     --set global.redis.addrs[0]="$DP_REDIS_URL" \
     --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" \
-    --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.local" \
+    --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.test" \
     --set tyk-gateway.gateway.ingress.className="nginx" --wait
   labelDataPlaneServices "$i"
   populateToxiProxy "${TOXIPROXY_URL:-}"

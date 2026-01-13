@@ -112,25 +112,25 @@ def generate_env_vars(
 ) -> dict[str, str]:
     env_vars = {
         "TOXIPROXY_URL": toxiproxy_url,
-        "TYK_TEST_BASE_URL": "http://chart-dash.local/",
-        "TYK_TEST_GW_URL": "http://chart-gw.local/",
+        "TYK_TEST_BASE_URL": "http://chart-dash.test/",
+        "TYK_TEST_GW_URL": "http://chart-gw.test/",
         "TYK_TEST_GW_SECRET": "352d20ee67be67f6340b4c0605b044b7",
     }
     for dp in data_planes:
         env_vars[f"TYK_TEST_GW_{dp.index}_ALFA_URL"] = (
-            f"http://chart-gw-dp-{dp.index}.local/"
+            f"http://chart-gw-dp-{dp.index}.test/"
         )
     return env_vars
 
 
 def generate_hosts_entries(data_planes: list[DataPlaneInfo]) -> list[str]:
     entries = [
-        "127.0.0.1 chart-dash.local",
-        "127.0.0.1 chart-gw.local",
-        "127.0.0.1 chart-mdcb.local",
+        "127.0.0.1 chart-dash.test",
+        "127.0.0.1 chart-gw.test",
+        "127.0.0.1 chart-mdcb.test",
     ]
     for dp in data_planes:
-        entries.append(f"127.0.0.1 chart-gw-dp-{dp.index}.local")
+        entries.append(f"127.0.0.1 chart-gw-dp-{dp.index}.test")
     return entries
 
 
