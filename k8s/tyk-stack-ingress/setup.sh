@@ -96,7 +96,7 @@ main() {
     source .env
   else
     warning "no .env file found in $(pwd)."
-    warnig "the script will fail if required environment variables are not sourced"
+    warning "the script will fail if required environment variables are not sourced"
   fi
 
   main_dep_check
