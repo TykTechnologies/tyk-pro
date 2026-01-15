@@ -363,20 +363,6 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
   sublog "Successfully installed tyk-data-plane in $(dp_namespace "$i")"
 done
 
-# Start hosts controller for ingress hostname resolution
-log "Starting k8s-hosts-controller for automatic /etc/hosts management..."
-HOSTS_NAMESPACES="$CP_NAMESPACE"
-for i in $(seq 1 "$NUM_DATA_PLANES"); do
-  HOSTS_NAMESPACES+=",$(dp_namespace "$i")"
-done
-
-if ! start_hosts_controller "$HOSTS_NAMESPACES"; then
-  warning "Failed to start hosts controller"
-  warning "Ingress hostnames may not be accessible"
-  warning "You can start it manually with:"
-  warning "  sudo \$(find_k8s_hosts_controller) --namespaces $HOSTS_NAMESPACES"
-fi
-
 log "----- Creating $TOOLS_NAMESPACE namespace -----"
 kubectl create namespace "$TOOLS_NAMESPACE" || true
 
@@ -408,12 +394,8 @@ log "To run a test, use the run-k6-test-custom task with parameters"
 log "--> $0 Done"
 log ""
 log "Services are accessible via:"
-log "  Dashboard:     http://chart-dash.test/"
-log "  Gateway (CP):  http://chart-gw.test/"
-log "  Gateway (DP1): http://chart-gw-dp-1.test/"
-log "  Gateway (DP2): http://chart-gw-dp-2.test/"
-log ""
-log "Hosts controller is running and managing /etc/hosts entries"
-log "To check status: pgrep -f k8s-hosts-controller"
-log "To view logs: tail -f /tmp/k8s-hosts-controller.log"
-log "To cleanup /etc/hosts manually: sudo \$(find_k8s_hosts_controller) --cleanup"
+echo "    Dashboard:     http://chart-dash.test/"
+echo "    Gateway (CP):  http://chart-gw.test/"
+echo "    Gateway (DP1): http://chart-gw-dp-1.test/"
+echo "    Gateway (DP2): http://chart-gw-dp-2.test/"
+echo ""

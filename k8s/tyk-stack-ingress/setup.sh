@@ -11,7 +11,6 @@ source lib.sh
 # Usage:   setup.sh [--toxiproxy]
 ######################################
 
-# Parse arguments
 USE_TOXIPROXY="false"
 for param in "$@"; do
   if [[ "$param" == "--toxiproxy" ]]; then
@@ -34,33 +33,28 @@ for param in "$@"; do
   fi
 done
 
-######################################
-# Prerequisites Check
-######################################
 check_prerequisites() {
   log "Checking prerequisites..."
 
   local missing=()
 
-  # Check Docker
   if ! command -v docker > /dev/null 2>&1; then
     missing+=("docker")
-  elif ! docker info > /dev/null 2>&1; then
+  fi
+
+  if ! docker info > /dev/null 2>&1; then
     err "Docker is not running"
     exit 1
   fi
 
-  # Check kubectl
   if ! command -v kubectl > /dev/null 2>&1; then
     missing+=("kubectl")
   fi
 
-  # Check kind
   if ! command -v kind > /dev/null 2>&1; then
     missing+=("kind")
   fi
 
-  # Check for license keys
   if [[ -z "${TYK_DB_LICENSEKEY:-}" ]] && [[ -z "${TYK_MDCB_LICENSEKEY:-}" ]]; then
     if [[ ! -f .env ]]; then
       err "License keys not found"
@@ -69,6 +63,10 @@ check_prerequisites() {
       exit 1
     fi
   fi
+
+  get_binary_path "hosts-controller-manager.sh" || {
+    err "failed to find hosts-controller-manager.sh in $PATH and /usr/local/bin"
+  }
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     err "Missing required tools: ${missing[*]}"
@@ -79,73 +77,51 @@ check_prerequisites() {
   log "Prerequisites check passed"
 }
 
-######################################
-# Sudo Access Check
-######################################
-check_sudo_access() {
-  # Check if we'll need sudo (k8s-hosts-controller requires it)
-  # Use -n for non-interactive check first
-  if ! sudo -n true 2>/dev/null; then
-    # Sudo would require password - warn user and validate now
-    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    warning "This script requires sudo access to start k8s-hosts-controller"
-    warning "The controller manages /etc/hosts entries for K8s ingress"
-    warning ""
-    warning "You will be prompted for your password now"
-    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-    # Validate sudo access (will prompt user if needed)
-    if ! sudo -v; then
-      err "Sudo access required but could not be acquired"
-      err "Please ensure you have sudo privileges"
-      exit 1
-    fi
-
-    log "Sudo access granted"
-  else
-    log "Sudo access available (no password required or already cached)"
+main_dep_check() {
+  check_prerequisites
+  local num_data_planes="${NUM_DATA_PLANES:-2}"
+  if [[ ! "$num_data_planes" =~ ^[0-9]+$ ]] || [[ "$num_data_planes" -lt 1 ]]; then
+    err "NUM_DATA_PLANES must be a positive integer (current: $num_data_planes)"
+    exit 1
   fi
 }
 
-######################################
-# Main Deployment Flow
-######################################
 main() {
-  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  log "Tyk K8s Testing Infrastructure Setup"
-  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "#####################################"
+  echo "Tyk K8s Testing Infrastructure Setup"
+  echo "#####################################"
 
-  # Source .env file if exists
   if [[ -f .env ]]; then
     log "Loading .env file..."
     source .env
+  else
+    warning "no .env file found in $(pwd)."
+    warnig "the script will fail if required environment variables are not sourced"
   fi
 
-  # Check prerequisites
-  check_prerequisites
-
-  # Check sudo access early (before user walks away)
+  main_dep_check
+  echo ""
+  echo "####################################################"
+  echo "#  This script requires administrative privileges  #"
+  echo "#  to start the k8s-hosts-controller.              #"
+  echo "#                                                  #"
+  echo "#  The controller manages /etc/hosts entries.      #"
+  echo "####################################################"
+  echo ""
   check_sudo_access
 
-  # Create Kind cluster (idempotent)
-  log ""
-  log "Step 1: Creating Kind cluster..."
+  echo "########################"
+  echo "Creating Kind cluster..."
+  echo "########################"
   ./create-cluster.sh || {
     err "Failed to create Kind cluster"
     exit 1
   }
 
-  # Deploy Tyk stack
-  log ""
-  log "Step 2: Deploying Tyk stack..."
-  if [[ "$USE_TOXIPROXY" == "true" ]]; then
-    log "Toxiproxy: ENABLED"
-  else
-    log "Toxiproxy: DISABLED"
-  fi
+  echo "#######################"
+  echo "Deploying Tyk stack..."
+  echo "#######################"
 
-  # Pass through the toxiproxy flag to run-tyk-cp-dp.sh
   local toxiproxy_param=""
   if [[ "$USE_TOXIPROXY" == "true" ]]; then
     toxiproxy_param="toxiproxy=true"
@@ -156,39 +132,25 @@ main() {
     exit 1
   }
 
-  # Start k8s-hosts-controller
-  log ""
-  log "Step 3: Starting k8s-hosts-controller..."
-
-  # Validate NUM_DATA_PLANES
-  local num_data_planes="${NUM_DATA_PLANES:-2}"
-  if [[ ! "$num_data_planes" =~ ^[0-9]+$ ]] || [[ "$num_data_planes" -lt 1 ]]; then
-    err "NUM_DATA_PLANES must be a positive integer (current: $num_data_planes)"
-    exit 1
-  fi
-
-  # Build comma-separated list of namespaces
-  local namespaces="tyk"
-  for i in $(seq 1 "$num_data_planes"); do
-    namespaces="${namespaces},tyk-dp-${i}"
-  done
-
-  if start_hosts_controller "$namespaces"; then
-    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    warning "k8s-hosts-controller is now running in the background"
-    warning ""
-    warning "It manages /etc/hosts entries for K8s ingress hostnames"
-    warning "Log file: /tmp/k8s-hosts-controller.log"
-    warning ""
-    warning "To check status later, run:"
-    warning "  hosts-controller-manager.sh status"
-    warning ""
-    warning "To stop it when done, run:"
-    warning "  hosts-controller-manager.sh stop"
-    warning ""
-    warning "To cleanup /etc/hosts entries, run:"
-    warning "  hosts-controller-manager.sh cleanup"
-    warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "#################################"
+  log "Starting k8s-hosts-controller..."
+  log "#################################"
+  if hosts-controller-manager.sh restart; then
+    echo "####################################################"
+    echo "k8s-hosts-controller is now running in the background"
+    echo ""
+    echo "It manages /etc/hosts entries for K8s ingress hostnames"
+    echo "Log file: /tmp/k8s-hosts-controller.log"
+    echo ""
+    echo "To check status later, run:"
+    echo "  hosts-controller-manager.sh status"
+    echo ""
+    echo "To stop it when done, run:"
+    echo "  hosts-controller-manager.sh stop"
+    echo ""
+    echo "To cleanup /etc/hosts entries, run:"
+    echo "  hosts-controller-manager.sh cleanup"
+    echo "####################################################"
   else
     err "Failed to start k8s-hosts-controller"
     err "Your cluster is deployed but /etc/hosts entries won't be managed"
@@ -196,39 +158,26 @@ main() {
     exit 1
   fi
 
-  # Success message
-  log ""
-  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  log "✓ Setup complete! Your K8s environment is ready."
-  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  log ""
-  log "Cluster status:"
-  log "  kubectl get nodes"
-  log ""
-  log "View pods:"
-  log "  kubectl get pods -A"
-  log ""
-  log "View services:"
-  log "  kubectl get svc -A"
-  log ""
+  echo""
+  log "################################################"
+  log "Setup complete! Your K8s environment is ready."
+  log "################################################"
+  echo""
   if [[ "$USE_TOXIPROXY" == "true" ]]; then
-    log "Toxiproxy environment variables saved to: toxiproxy-ci.env"
+    log "Toxiproxy environment variables saved to: $(pwd)/toxiproxy-ci.env"
     log ""
     log "Test configuration:"
     log "  source toxiproxy-ci.env"
   fi
 
-  # Final cleanup reminder
-  warning ""
-  warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  warning "When you're done working, don't forget to cleanup:"
-  warning ""
-  warning "  hosts-controller-manager.sh stop"
-  warning "  hosts-controller-manager.sh cleanup"
-  warning ""
-  warning "To delete the Kind cluster:"
-  warning "  kind delete cluster"
-  warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "####################################################"
+  echo "When you're done working, don't forget to cleanup:"
+  echo ""
+  echo "hosts-controller-manager.sh stop"
+  echo "hosts-controller-manager.sh cleanup"
+  echo "kind delete cluster # deletes the k8s cluster"
+  echo "####################################################"
 }
 
 main "$@"

@@ -7,7 +7,6 @@ NC='\033[0m'
 export SCRIPT_TEMP_DIR=$(mktemp -d -t "tyk-deploy.XXXXXXXXXX")
 
 cleanup() {
-    echo "clean up trap"
   if [ -d "$SCRIPT_TEMP_DIR" ]; then
     rm -rf "$SCRIPT_TEMP_DIR"
   fi
@@ -31,15 +30,15 @@ err() {
 }
 
 sublog() {
-  echo -e "${GREEN}[INFO]${NC}      $@" >&2
+  echo -e "[$(date +%Y-%m-%dT%H:%M:%S%:z)]${NC}   $@" >&2
 }
 
 subwarning() {
-  echo -e "${ORANGE}[WARNING]${NC}      $@" >&2
+  echo -e "${ORANGE}[WARNING]${NC}  $@" >&2
 }
 
 suberr() {
-  echo -e "${RED}[ERROR]${NC}      $@" >&2
+  echo -e "${RED}[ERROR]${NC}   $@" >&2
 }
 
 helm_quiet() {
@@ -50,7 +49,7 @@ helm_quiet() {
     return 1
   fi
 
-  if ! helm "$@" > "$log_file" 2>&1; then
+  if ! helm "$@" >"$log_file" 2>&1; then
     local msg="Helm command failed: \""
     if [[ -f "$log_file" ]]; then
       msg+="$(cat "$log_file")\""
@@ -105,6 +104,28 @@ actual_retry() {
   done
 
   return 0
+}
+
+get_binary_path() {
+  local bin_name="$1"
+
+  if [[ -z "$bin_name" ]]; then
+    echo "bin_name is missing, usage: get_binary_path <bin_name>; e.g, get_binary_path kubectl"
+    return 1
+  fi
+
+  if command -v "$bin_name" >/dev/null 2>&1; then
+    command -v "$bin_name"
+    return 0
+  fi
+
+  local fallback_path="/usr/local/bin/$bin_name"
+  if [[ -x "$fallback_path" ]]; then
+    echo "$fallback_path"
+    return 0
+  fi
+
+  return 1
 }
 
 # kubectl_get_secret_value $namespace $secret_name $key
@@ -197,106 +218,23 @@ retrieve_control_plane_secrets() {
   return 0
 }
 
-find_k8s_hosts_controller() {
-  local possible_paths=(
-    "/usr/local/bin/k8s-hosts-controller"
-    "../apps/k8s-hosts-controller/k8s-hosts-controller"
-    "../../k8s-hosts-controller/k8s-hosts-controller"
-  )
-
-  for path in "${possible_paths[@]}"; do
-    if [[ -f "$path" && -x "$path" ]]; then
-      echo "$path"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-start_hosts_controller() {
-  local namespaces="${1:?namespaces required}"
-  local controller_binary
-  local startup_wait_time=${STARTUP_WAIT_TIME:-2}
-
-  # Find the controller binary
-  if ! controller_binary=$(find_k8s_hosts_controller); then
-    err "k8s-hosts-controller binary not found"
-    err "Expected locations (relative to k8s/tyk-stack-ingress/):"
-    err "  - ../apps/k8s-hosts-controller/k8s-hosts-controller"
-    err "  - ../../k8s-hosts-controller/k8s-hosts-controller"
-    err "  - /usr/local/bin/k8s-hosts-controller"
-    return 1
-  fi
-
-  log "Found k8s-hosts-controller at: $controller_binary"
-
-  local manager_script
-  local possible_manager_scripts=(
-    "/usr/local/bin/hosts-controller-manager.sh"
-    "../apps/k8s-hosts-controller/hosts-controller-manager.sh"
-    "../../k8s-hosts-controller/hosts-controller-manager.sh"
-  )
-
-  for script in "${possible_manager_scripts[@]}"; do
-    if [[ -f "$script" && -x "$script" ]]; then
-      manager_script="$script"
-      break
-    fi
-  done
-
-  if [[ -n "$manager_script" ]]; then
-    log "Starting hosts controller via manager script at $manager_script..."
-    CONTROLLER_BINARY="$controller_binary" "$manager_script" start "$namespaces"
-    return $?
-  fi
-
-  log "hosts-controller-manager.sh not found, using manual process management"
-
-  # Fallback: manual process management
-  # Check for existing controller process (single pgrep call to avoid race condition)
-  local existing_pid
-  if existing_pid=$(pgrep -f "k8s-hosts-controller" 2>/dev/null); then
-    log "Hosts controller already running (PID: $existing_pid)"
-    log "Skipping startup, using existing instance"
+check_sudo_access() {
+  if [[ $EUID -eq 0 ]]; then
+    log "Running as root, sudo not required."
     return 0
   fi
 
-  # Validate sudo access before starting controller
-  if ! sudo -v 2>/dev/null; then
-    err "Sudo access required for hosts controller"
-    return 1
+  if sudo -n true 2>/dev/null; then
+    log "Sudo access available (cached or NOPASSWD)."
+    return 0
   fi
 
-  log "Starting hosts controller in background..."
-  local log_file="/tmp/k8s-hosts-controller.log"
-  sudo "$controller_binary" --namespaces "$namespaces" > "$log_file" 2>&1 &
-  HOSTS_CONTROLLER_PID=$!
-
-  sleep "$startup_wait_time"
-  if ! kill -0 "$HOSTS_CONTROLLER_PID" 2>/dev/null; then
-    err "Hosts controller failed to start"
-    err "Log file: $log_file"
-    return 1
+  if ! sudo -v; then
+    err "Sudo access required but could not be acquired"
+    err "Please ensure you have sudo privileges"
+    exit 1
   fi
 
-  log "Hosts controller started (PID: $HOSTS_CONTROLLER_PID)"
-  log "Log file: $log_file"
-
-  # Set up cleanup trap with proper chaining
-  cleanup_hosts_controller() {
-    log "Stopping hosts controller..."
-    if [[ -n "${HOSTS_CONTROLLER_PID:-}" ]] && kill -0 "$HOSTS_CONTROLLER_PID" 2>/dev/null; then
-      sudo kill "$HOSTS_CONTROLLER_PID" 2>/dev/null || true
-    fi
-  }
-
-  # Chain cleanup with existing temp directory cleanup
-  if [[ -n "${BASH_TRAP_EXIT:-}" ]]; then
-    trap "cleanup_hosts_controller; ${BASH_TRAP_EXIT}" EXIT INT TERM
-  else
-    trap "cleanup_hosts_controller; cleanup" EXIT INT TERM
-  fi
-
+  log "Sudo access granted"
   return 0
 }
