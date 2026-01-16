@@ -148,6 +148,10 @@ deployControlPlaneRedis() {
   fi
 
   kubectl label svc/redis -n "$CP_NAMESPACE" tyk.io/component=redis --overwrite > /dev/null 2>&1
+
+  # Expose Redis as LoadBalancer for test access
+  kubectl patch svc redis -n "$CP_NAMESPACE" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
+
   log "successfully deployed tyk-redis for control plane"
 }
 
@@ -160,6 +164,10 @@ deployMongo() {
   fi
 
   kubectl label svc/mongo -n "$CP_NAMESPACE" tyk.io/component=mongo --overwrite > /dev/null 2>&1
+
+  # Expose MongoDB as LoadBalancer for test access
+  kubectl patch svc mongo -n "$CP_NAMESPACE" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
+
   log "successfully deployed MongoDB for control plane"
 }
 
@@ -345,6 +353,10 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
 
   helm_quiet upgrade --install redis tyk-helm/simple-redis -n "$(dp_namespace $i)" --wait
   kubectl label svc/redis -n "$(dp_namespace "$i")" tyk.io/component=redis --overwrite > /dev/null 2>&1
+
+  # Expose Redis as LoadBalancer for test access
+  kubectl patch svc redis -n "$(dp_namespace "$i")" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
+
   populateToxiProxy "${TOXIPROXY_URL:-}"
 
   helm_quiet upgrade --install -n "$(dp_namespace "$i")" tyk-data-plane tyk-helm/tyk-data-plane -f ./manifests/data-plane-values.yaml \
