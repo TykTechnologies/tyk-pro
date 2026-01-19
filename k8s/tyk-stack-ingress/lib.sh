@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 GREEN='\033[0;32m'
+LIGHT_BLUE='\033[1;34m'
 RED='\033[0;31m'
 ORANGE='\033[0;33m'
 NC='\033[0m'
@@ -17,28 +18,31 @@ else
   trap cleanup EXIT INT TERM
 fi
 
+full_path=$(realpath "$0")
+display_name="tyk-pro/${full_path##*/tyk-pro/}"
+
 log() {
-  echo -e "${GREEN}[INFO]${NC} $@" >&2
+  echo -e "${LIGHT_BLUE}[$display_name]${NC} $@" >&2
 }
 
 warning() {
-  echo -e "${ORANGE}[WARNING]${NC} $@" >&2
+  echo -e "${ORANGE}[$display_name] $@ ${NC}" >&2
 }
 
 err() {
-  echo -e "${RED}[ERROR]${NC} $@" >&2
+  echo -e "${RED}[$display_name] $@ ${NC}" >&2
 }
 
 sublog() {
-  echo -e "[$(date +%Y-%m-%dT%H:%M:%S%:z)]${NC}   $@" >&2
+  echo -e "${LIGHT_BLUE}[$display_name]${NC}    $@" >&2
 }
 
 subwarning() {
-  echo -e "${ORANGE}[WARNING]${NC}  $@" >&2
+  echo -e "${ORANGE}[WARNING]  $@ ${NC}" >&2
 }
 
 suberr() {
-  echo -e "${RED}[ERROR]${NC}   $@" >&2
+  echo -e "${RED}[ERROR]   $@ ${NC}" >&2
 }
 
 helm_quiet() {
@@ -49,7 +53,7 @@ helm_quiet() {
     return 1
   fi
 
-  if ! helm "$@" >"$log_file" 2>&1; then
+  if ! helm "$@" > "$log_file" 2>&1; then
     local msg="Helm command failed: \""
     if [[ -f "$log_file" ]]; then
       msg+="$(cat "$log_file")\""
@@ -114,14 +118,13 @@ get_binary_path() {
     return 1
   fi
 
-  if command -v "$bin_name" >/dev/null 2>&1; then
+  if command -v "$bin_name" > /dev/null 2>&1; then
     command -v "$bin_name"
     return 0
   fi
 
   local fallback_path="/usr/local/bin/$bin_name"
   if [[ -x "$fallback_path" ]]; then
-    echo "$fallback_path"
     return 0
   fi
 
@@ -137,7 +140,7 @@ kubectl_get_secret_value() {
 
   local value
   value=$(kubectl get secret --namespace "$namespace" "$secret_name" \
-    -o jsonpath="{.data.$key}" 2>/dev/null | base64 --decode 2>/dev/null)
+    -o jsonpath="{.data.$key}" 2> /dev/null | base64 --decode 2> /dev/null)
   if [[ $? -ne 0 ]]; then
     err "Failed to retrieve secret \"$namespace/$secret_name\" field: $key"
     return 1
@@ -163,7 +166,7 @@ wait_for_loadbalancer_ip() {
 
   _get_lb_ip() {
     ip=$(kubectl get svc "$service_name" -n "$namespace" \
-      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2> /dev/null || true)
 
     if [[ -n "$ip" ]]; then
       return 0
@@ -224,7 +227,7 @@ check_sudo_access() {
     return 0
   fi
 
-  if sudo -n true 2>/dev/null; then
+  if sudo -n true 2> /dev/null; then
     log "Sudo access available (cached or NOPASSWD)."
     return 0
   fi

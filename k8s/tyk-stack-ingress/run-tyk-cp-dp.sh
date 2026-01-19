@@ -59,8 +59,8 @@ for param in "$@"; do
   fi
 done
 
-export DASH_IMAGE_TAG=${DASH_IMAGE_TAG:-"v5.2.1"}
-export GW_IMAGE_TAG=${GW_IMAGE_TAG:-"v5.2.1"}
+export DASH_IMAGE_TAG=${DASH_IMAGE_TAG:-"v5.8.9"}
+export GW_IMAGE_TAG=${GW_IMAGE_TAG:-"v5.8.9"}
 export IMAGE_REPO=${IMAGE_REPO:-"tykio"}
 if [ "$USE_TOXIPROXY" = "true" ]; then
   log "Deploying with Toxiproxy"
@@ -148,8 +148,6 @@ deployControlPlaneRedis() {
   fi
 
   kubectl label svc/redis -n "$CP_NAMESPACE" tyk.io/component=redis --overwrite > /dev/null 2>&1
-
-  # Expose Redis as LoadBalancer for test access
   kubectl patch svc redis -n "$CP_NAMESPACE" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
 
   log "successfully deployed tyk-redis for control plane"
@@ -164,8 +162,6 @@ deployMongo() {
   fi
 
   kubectl label svc/mongo -n "$CP_NAMESPACE" tyk.io/component=mongo --overwrite > /dev/null 2>&1
-
-  # Expose MongoDB as LoadBalancer for test access
   kubectl patch svc mongo -n "$CP_NAMESPACE" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
 
   log "successfully deployed MongoDB for control plane"
@@ -329,7 +325,6 @@ retrieve_control_plane_secrets || {
 
 log "Deploying $NUM_DATA_PLANES Tyk Data planes..."
 
-# Install data planes in a loop
 for i in $(seq 1 "$NUM_DATA_PLANES"); do
   # Set the appropriate Redis URL for this data plane
   # port scheme: dp-1 -> 8379, dp-2 -> 9379, dp-3 -> 10379, etc. (7379 + i*1000)
@@ -353,8 +348,6 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
 
   helm_quiet upgrade --install redis tyk-helm/simple-redis -n "$(dp_namespace $i)" --wait
   kubectl label svc/redis -n "$(dp_namespace "$i")" tyk.io/component=redis --overwrite > /dev/null 2>&1
-
-  # Expose Redis as LoadBalancer for test access
   kubectl patch svc redis -n "$(dp_namespace "$i")" -p '{"spec":{"type":"LoadBalancer"}}' > /dev/null 2>&1
 
   populateToxiProxy "${TOXIPROXY_URL:-}"
@@ -369,6 +362,7 @@ for i in $(seq 1 "$NUM_DATA_PLANES"); do
     --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" \
     --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.test" \
     --set tyk-gateway.gateway.ingress.className="nginx" --wait
+    
   labelDataPlaneServices "$i"
   populateToxiProxy "${TOXIPROXY_URL:-}"
 
