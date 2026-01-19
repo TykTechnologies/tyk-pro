@@ -73,23 +73,6 @@ class K8sDiscovery:
         match = re.search(r"tyk-dp-(\d+)", namespace)
         return int(match.group(1)) if match else 0
 
-    def _find_service(
-        self, namespace: str, name: str, default_port: int = 0
-    ) -> Optional[ServiceInfo]:
-        try:
-            svc = self.core_api.read_namespaced_service(name=name, namespace=namespace)
-            port = default_port
-            if svc.spec.ports:
-                port = svc.spec.ports[0].port
-            return ServiceInfo(
-                name=svc.metadata.name,
-                namespace=namespace,
-                cluster_ip=svc.spec.cluster_ip or "",
-                port=port,
-            )
-        except ApiException:
-            return None
-
     def _find_service_by_label(
         self, namespace: str, label_selector: str, default_port: int = 0
     ) -> Optional[ServiceInfo]:

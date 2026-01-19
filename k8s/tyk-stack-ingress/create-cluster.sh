@@ -11,8 +11,8 @@ KIND_CLOUD_PROVIDER_KIND_VERSION="v0.7.0"
 
 function check_dependencies() {
   for cmd in kind docker; do
-    if ! command -v "$cmd" > /dev/null 2>&1; then
-      error "$cmd is not installed or not in PATH"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      err "$cmd is not installed or not in PATH"
       exit 1
     fi
   done
@@ -26,9 +26,9 @@ function create_kind_cluster() {
     return 0
   fi
 
-  log "Creating kind cluster '$cluster_name'"
+  sublog "Creating kind cluster '$cluster_name'"
 
-  cat << EOF | kind create cluster --name="$cluster_name" --config=-
+  cat <<EOF | kind create cluster --name="$cluster_name" --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -52,11 +52,12 @@ EOF
 function run_cloud_provider_kind() {
   local container_name="tyk-ci-cloud-provider-kind"
 
-  if docker ps --format "{{.Names}}" | grep -q "$container_name"; then
-    log "container '$container_name' is already running. recreating it"
-
-    docker rm -f "$container_name"
-    sleep 2
+  if docker container inspect "$container_name" >/dev/null 2>&1; then
+    log "Removing existing container '$container_name' to ensure clean startup..."
+    if ! docker container rm -f "$container_name" >/dev/null; then
+      err "failed to remove container $container_name"
+      exit 1
+    fi
   fi
 
   log "running container '$container_name' for cloud-provider-kind/cloud-controller-manager image"
