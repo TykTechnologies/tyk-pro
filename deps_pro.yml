@@ -90,7 +90,7 @@ services:
     container_name: mcp-server
     # Built from: https://github.com/TykTechnologies/tyk-mock-mcp-server
     # Dockerfile: https://github.com/TykTechnologies/tyk-mock-mcp-server/blob/main/Dockerfile
-    image: 754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-mock-mcp-server:test
+    image: 754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-mock-mcp-server:v1.0.0
     ports:
       - "7878:7878"
     environment:
