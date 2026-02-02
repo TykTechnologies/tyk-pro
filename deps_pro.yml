@@ -88,7 +88,7 @@ services:
   mcp-server:
     profiles: ["all", "master-datacenter"]
     container_name: mcp-server
-    image: tyk-mock-mcp-server:test
+    image: 754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-mock-mcp-server:test
     ports:
       - "7878:7878"
     environment:
