@@ -153,6 +153,8 @@ services:
       - TYK_GW_STORAGE_HOST=redis-datacenter-3
       - TYK_GW_OPENTELEMETRY_ENABLED=true
       - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+      - TYK_GW_SLAVEOPTIONS_RPCKEY=${TYK_GW_SLAVEOPTIONS_RPCKEY}
+      - TYK_GW_SLAVEOPTIONS_APIKEY=${TYK_GW_SLAVEOPTIONS_APIKEY}
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -172,6 +174,8 @@ services:
       - TYK_GW_STORAGE_HOST=redis-datacenter-3
       - TYK_GW_OPENTELEMETRY_ENABLED=true
       - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+      - TYK_GW_SLAVEOPTIONS_RPCKEY=${TYK_GW_SLAVEOPTIONS_RPCKEY}
+      - TYK_GW_SLAVEOPTIONS_APIKEY=${TYK_GW_SLAVEOPTIONS_APIKEY}
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
