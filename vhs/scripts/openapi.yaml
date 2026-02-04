@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+    title: Train Travel API
+      version: 1.0.0
+        description: API for booking train trips across Europe
+          x-go-module: github.com/example/train-travel
+            x-go-package: traintravel
+              x-api-category: transportation
+              servers:
+                  - url: https://api.example.com
+                      description: Production
+                          x-environment: production
+                          security:
+                              - OAuth2: [read, write]
+                                  paths:
+                                      /stations:
+                                            get:
+                                                    operationId: getStations
+                                                          summary: Get train stations
+                                                                x-cache-ttl: 300
+                                                                      parameters:
+                                                                                - name: limit
+                                                                                          in: query
+                                                                                                    schema:
+                                                                                                                  type: integer
+                                                                                                                              default: 20
+                                                                                                                                        x-go-name: Limit
+                                                                                                                                              responses:
+                                                                                                                                                        '200':
+                                                                                                                                                                    description: List of stations
+                                                                                                                                                                      /trips:
+                                                                                                                                                                            get:
+                                                                                                                                                                                    operationId: getTrips
+                                                                                                                                                                                          summary: Search train trips
+                                                                                                                                                                                                x-cache-ttl: 60
+                                                                                                                                                                                                      x-rate-limit: 100
+                                                                                                                                                                                                            responses:
+                                                                                                                                                                                                                      '200':
+                                                                                                                                                                                                                                  description: Available trips
+                                                                                                                                                                                                                                    /bookings:
+                                                                                                                                                                                                                                          post:
+                                                                                                                                                                                                                                                  operationId: createBooking
+                                                                                                                                                                                                                                                        summary: Create a booking
+                                                                                                                                                                                                                                                              x-requires-auth: true
+                                                                                                                                                                                                                                                                    x-rate-limit: 50
+                                                                                                                                                                                                                                                                          responses:
+                                                                                                                                                                                                                                                                                    '201':
+                                                                                                                                                                                                                                                                                                description: Booking created
+                                                                                                                                                                                                                                                                                                components:
+                                                                                                                                                                                                                                                                                                    securitySchemes:
+                                                                                                                                                                                                                                                                                                          OAuth2:
+                                                                                                                                                                                                                                                                                                                  type: oauth2
+                                                                                                                                                                                                                                                                                                                        x-token-url: https://auth.example.com/token
+                                                                                                                                                                                                                                                                                                                              flows:
+                                                                                                                                                                                                                                                                                                                                        authorizationCode:
+                                                                                                                                                                                                                                                                                                                                                    authorizationUrl: https://auth.example.com/oauth2/authorize
+                                                                                                                                                                                                                                                                                                                                                              tokenUrl: https://auth.example.com/oauth2/token
+                                                                                                                                                                                                                                                                                                                                                                        scopes:
+                                                                                                                                                                                                                                                                                                                                                                                      read: Read access
+                                                                                                                                                                                                                                                                                                                                                                                                  write: Write access
+                                                                                                                                                                                                                                                                                                                                                                                                  x-codegen:
+                                                                                                                                                                                                                                                                                                                                                                                                      go:
+                                                                                                                                                                                                                                                                                                                                                                                                            packageName: traintravel
+                                                                                                                                                                                                                                                                                                                                                                                                                generateInterfaces: true

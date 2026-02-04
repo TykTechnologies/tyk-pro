@@ -1,0 +1,14 @@
+# Generated VHS outputs
+outputs/
+*.gif
+*.mp4
+*.webm
+
+# VHS cache and temporary files
+.vhs/
+*.txt
+
+# Generated outputs in scripts directory (should be moved to outputs/)
+scripts/*.gif
+scripts/*.mp4
+scripts/*.webm

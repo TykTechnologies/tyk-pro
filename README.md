@@ -2,6 +2,25 @@
 
 This repo hosts the automated testing infrastructure and code. Within each repo there are CI tests which are meant to quickly give feedback on PRs.
 
+## 🎬 Product Showcase
+
+Professional video demonstrations of Tyk's automated testing infrastructure are available in the [`vhs/`](vhs/) directory. These demos showcase:
+
+- Quick start workflows
+- Environment configuration options
+- Test execution patterns
+- Task automation
+- Cleanup procedures
+- Advanced testing scenarios
+
+**Generate all demos:**
+```bash
+cd vhs
+make all
+```
+
+For more information, see the [VHS README](vhs/README.md).
+
 # Testing using tyk-automated-tests
 
 Tyk can be deployed in many ways. A deployment is modelled by a compose file. `pro.yml` models a standard Tyk Pro installation.

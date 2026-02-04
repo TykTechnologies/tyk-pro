@@ -1,0 +1,170 @@
+name: Generate VHS Demos
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'vhs/tapes/**/*.tape'
+      - 'vhs/configs/**'
+      - '.github/workflows/vhs-demo.yml'
+  pull_request:
+    paths:
+      - 'vhs/tapes/**/*.tape'
+      - 'vhs/configs/**'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      specific_demo:
+        description: 'Generate specific demo (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - all
+          - quickstart
+          - setup
+          - testing
+          - task-commands
+          - cleanup
+          - advanced
+
+jobs:
+  generate-demos:
+    name: Generate VHS Demos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install VHS
+        run: |
+          wget -q https://github.com/charmbracelet/vhs/releases/latest/download/vhs_Linux_x86_64.tar.gz
+          tar -xzf vhs_Linux_x86_64.tar.gz
+          sudo mv vhs /usr/local/bin/
+          vhs --version
+
+      - name: Install fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-jetbrains-mono
+
+      - name: Install ttyd (for VHS terminal)
+        run: |
+          wget -q https://github.com/tsl0922/ttyd/releases/download/1.7.3/ttyd.x86_64
+          chmod +x ttyd.x86_64
+          sudo mv ttyd.x86_64 /usr/local/bin/ttyd
+
+      - name: Generate demos
+        id: generate
+        run: |
+          cd vhs
+          if [ "${{ github.event.inputs.specific_demo }}" = "" ] || [ "${{ github.event.inputs.specific_demo }}" = "all" ]; then
+            make all
+          else
+            make ${{ github.event.inputs.specific_demo }}
+          fi
+
+      - name: List generated files
+        run: |
+          echo "Generated files:"
+          ls -lh vhs/outputs/gif/ || echo "No GIFs generated"
+          ls -lh vhs/outputs/mp4/ || echo "No MP4s generated"
+
+      - name: Upload GIF artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhs-demos-gif
+          path: vhs/outputs/gif/*.gif
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload MP4 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhs-demos-mp4
+          path: vhs/outputs/mp4/*.mp4
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Comment on PR with demos
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const gifDir = 'vhs/outputs/gif';
+            const gifs = fs.readdirSync(gifDir).filter(f => f.endsWith('.gif'));
+
+            let comment = '## 🎬 VHS Demo Preview\n\n';
+            comment += `Generated ${gifs.length} demo(s):\n\n`;
+
+            gifs.forEach(gif => {
+              const name = gif.replace('.gif', '');
+              comment += `### ${name}\n`;
+              comment += `![${name}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts)\n\n`;
+            });
+
+            comment += '\n📦 Download artifacts from the Actions tab to view the demos.';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Upload to release assets
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for gif in vhs/outputs/gif/*.gif; do
+            if [ -f "$gif" ]; then
+              gh release upload ${{ github.event.release.tag_name }} "$gif"
+            fi
+          done
+          for mp4 in vhs/outputs/mp4/*.mp4; do
+            if [ -f "$mp4" ]; then
+              gh release upload ${{ github.event.release.tag_name }} "$mp4"
+            fi
+          done
+
+  validate-tapes:
+    name: Validate VHS Tapes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate tape files
+        run: |
+          echo "Validating VHS tape files..."
+          for tape in vhs/tapes/*.tape; do
+            if [ -f "$tape" ]; then
+              echo "Checking $tape..."
+              # Basic validation: check for Output directive
+              if ! grep -q "^Output " "$tape"; then
+                echo "❌ Error: $tape missing Output directive"
+                exit 1
+              fi
+              echo "✓ $tape is valid"
+            fi
+          done
+          echo "✅ All tape files validated successfully"
+
+      - name: Check naming convention
+        run: |
+          echo "Checking naming convention..."
+          cd vhs/tapes
+          for tape in *.tape; do
+            if [[ ! "$tape" =~ ^[0-9]{2}-.+\.tape$ ]]; then
+              echo "❌ Error: $tape doesn't follow naming convention (##-description.tape)"
+              exit 1
+            fi
+          done
+          echo "✅ All tapes follow naming convention"
