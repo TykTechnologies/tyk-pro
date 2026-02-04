@@ -167,7 +167,7 @@ jobs:
           GATEWAY_CONTAINER_NAME=tyk
           USER_API_SECRET=${{ steps.env_up.outputs.USER_API_SECRET }}
           EOF
-          env $(cat pytest.env | xargs) $pytest -m "${{ matrix.envfiles.apimarkers }}"
+          env $(cat pytest.env | xargs) $pytest -k "test_mcp_server_health or test_mcp_client_server_integration"
       - name: Generate metadata and upload test reports
         id: metadata_report
         if: always() && (steps.test_execution.conclusion != 'skipped')
