@@ -141,6 +141,44 @@ services:
       - "8282:8282"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-2.conf"]
 
+  tyk-gateway-datacenter-3-alfa:
+    profiles: ["all", "slave-datacenter"]
+    container_name: tyk-gateway-datacenter-3-alfa
+    image: ${tyk_ee_image}
+    pull_policy: ${pull_policy}
+    env_file:
+      - ${env_file}
+    environment:
+      - TYK_GW_LISTENPORT=8381
+      - TYK_GW_STORAGE_HOST=redis-datacenter-3
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
+      - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates
+      - ${confs_dir}:/conf/
+    ports:
+      - "8381:8381"
+    entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
+
+  tyk-gateway-datacenter-3-beta:
+    profiles: ["all", "slave-datacenter"]
+    container_name: tyk-gateway-datacenter-3-beta
+    image: ${tyk_ee_image}
+    pull_policy: ${pull_policy}
+    env_file:
+      - ${env_file}
+    environment:
+      - TYK_GW_LISTENPORT=8382
+      - TYK_GW_STORAGE_HOST=redis-datacenter-3
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
+      - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates
+      - ${confs_dir}:/conf/
+    ports:
+      - "8382:8382"
+    entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
+
   gateway-checker:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
@@ -221,6 +259,32 @@ services:
       start_period: 4s
       timeout: 10s
 
+  gateway-checker-3a:
+    profiles: ["all", "slave-datacenter"]
+    image: curlimages/curl
+    command: tail -f /dev/null
+    depends_on:
+      - tyk-gateway-datacenter-3-alfa
+    healthcheck:
+      test: curl -s -k --fail https://tyk-gateway-datacenter-3-alfa:8381/hello | grep -o '.*status":"pass".*redis":{"status":"pass".*rpc":{"status":"pass"'
+      interval: 5s
+      retries: 30
+      start_period: 4s
+      timeout: 10s
+
+  gateway-checker-3b:
+    profiles: ["all", "slave-datacenter"]
+    image: curlimages/curl
+    command: tail -f /dev/null
+    depends_on:
+      - tyk-gateway-datacenter-3-beta
+    healthcheck:
+      test: curl -s -k --fail https://tyk-gateway-datacenter-3-beta:8382/hello | grep -o '.*status":"pass".*redis":{"status":"pass".*rpc":{"status":"pass"'
+      interval: 5s
+      retries: 30
+      start_period: 4s
+      timeout: 10s
+
   wait_tyk_slaves:
     profiles: ["all", "slave-datacenter"]
     image: hello-world:linux
@@ -228,10 +292,14 @@ services:
         gateway-checker-1a:
             condition: service_healthy
         gateway-checker-1b:
-            condition: service_healthy 
+            condition: service_healthy
         gateway-checker-2a:
             condition: service_healthy
         gateway-checker-2b:
+            condition: service_healthy
+        gateway-checker-3a:
+            condition: service_healthy
+        gateway-checker-3b:
             condition: service_healthy 
 
 
