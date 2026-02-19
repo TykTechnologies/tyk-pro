@@ -2,7 +2,7 @@ services:
   tyk:
     profiles: ["all", "master-datacenter"]
     container_name: tyk
-    image: ${tyk_image}
+    image: ${tyk_ee_image}
     env_file:
       - ${env_file}
     volumes:

@@ -77,3 +77,28 @@ services:
       - ./certs/nginx.key:/etc/nginx/ssl/nginx.key
     depends_on:
       - upstream
+
+  grpc-server:
+    profiles: ["all", "master-datacenter"]
+    container_name: grpc-server
+    image: tykio/tyk-grpc-plugin:v1.0
+    ports:
+      - "9111:9111"
+
+  mcp-server:
+    profiles: ["all", "master-datacenter"]
+    container_name: mcp-server
+    # Built from: https://github.com/TykTechnologies/tyk-mock-mcp-server
+    # Dockerfile: https://github.com/TykTechnologies/tyk-mock-mcp-server/blob/main/Dockerfile
+    image: 754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-mock-mcp-server:main
+    ports:
+      - "7878:7878"
+    environment:
+      - PORT=7878
+      - DEBUG=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7878/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

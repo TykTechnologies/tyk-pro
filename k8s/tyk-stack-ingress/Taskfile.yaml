@@ -1,0 +1,156 @@
+---
+version: "3"
+
+tasks:
+  create-cluster:
+    desc: Creates a Kind Kubernetes cluster with port mappings for ingress
+    cmds:
+      - ./create-cluster.sh
+
+  deploy:
+    desc: Deploys Tyk control plane and data plane in the Kubernetes cluster
+    cmds:
+      - ./run-tyk-cp-dp.sh
+
+  deploy-with-toxiproxy:
+    desc: Deploys Tyk control plane and data plane with Toxiproxy for network simulation
+    cmds:
+      - ./run-tyk-cp-dp.sh toxiproxy=true
+
+  get-dp-secret:
+    desc: Gets the tyk-data-plane-secret from the tyk-dp namespace in human-readable format
+    cmds:
+      - |
+        echo "=== Tyk Data Plane Secret ==="
+        echo "API Secret: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.APISecret}' | base64 --decode)"
+        echo "Group ID: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.groupID}' | base64 --decode)"
+        echo "Org ID: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.orgId}' | base64 --decode)"
+        echo "User API Key: $(kubectl get secret tyk-data-plane-secret -n tyk-dp -o jsonpath='{.data.userApiKey}' | base64 --decode)"
+        echo "==========================="
+
+  start-port-forward:
+    desc: Port-forwards all Tyk services and saves logs to a file
+    cmds:
+      - |
+        LOG_FILE="tyk-port-forward.log"
+        echo "Starting port-forwarding for all Tyk services. Logs will be saved to $LOG_FILE"
+        echo "Starting port-forwarding at $(date)" > $LOG_FILE
+        
+        # Start port-forwarding for Dashboard
+        echo "Starting port-forward for Dashboard on localhost:3000..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/dashboard-svc-tyk-control-plane-tyk-dashboard 3000:3000 >> $LOG_FILE 2>&1 &
+        DASHBOARD_PID=$!
+        echo "Dashboard port-forward started with PID $DASHBOARD_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for MDCB
+        echo "Starting port-forward for MDCB on localhost:9091..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/mdcb-svc-tyk-control-plane-tyk-mdcb 9091:9091 >> $LOG_FILE 2>&1 &
+        MDCB_PID=$!
+        echo "MDCB port-forward started with PID $MDCB_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for Control Plane Gateway
+        echo "Starting port-forward for Control Plane Gateway on localhost:8080..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/gateway-svc-tyk-control-plane-tyk-gateway 8080:8080 >> $LOG_FILE 2>&1 &
+        CP_GW_PID=$!
+        echo "Control Plane Gateway port-forward started with PID $CP_GW_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for Data Plane Gateway
+        echo "Starting port-forward for Data Plane Gateway on localhost:8181..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk-dp-1 svc/gateway-svc-tyk-data-plane-tyk-gateway 8181:8080 >> $LOG_FILE 2>&1 &
+        DP_GW_PID=$!
+        echo "Data Plane Gateway port-forward started with PID $DP_GW_PID" | tee -a $LOG_FILE
+        
+        # Start port-forwarding for pump
+        echo "Starting port forwarding for pump on localhost:9090..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/pump-svc-tyk-control-plane-tyk-pump 9090:9090 >> $LOG_FILE 2>&1 &
+        PUMP_PID=$!
+        echo "Pump port-forward started with PID $PUMP_PID" | tee -a $LOG_FILE
+        
+        echo "All port-forwards started. PIDs: $DASHBOARD_PID $MDCB_PID $CP_GW_PID $DP_GW_PID $PUMP_PID" | tee -a $LOG_FILE
+        echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward" | tee -a $LOG_FILE
+        echo "Logs are being saved to $LOG_FILE"
+
+  stop-port-forward:
+    desc: Stops all kubectl port-forward processes
+    cmds:
+      - |
+        echo "Stopping all kubectl port-forward processes..."
+        pkill -f "kubectl port-forward" || echo "No port-forward processes found"
+        echo "All port-forward processes stopped"
+
+  start-toxiproxy-forward:
+    desc: Port-forwards the Toxiproxy API and all proxies to localhost
+    cmds:
+      - |
+        LOG_FILE="toxiproxy-port-forward.log"
+        echo "Starting port-forwarding for Toxiproxy. Logs will be saved to $LOG_FILE"
+        echo "Starting port-forwarding at $(date)" > $LOG_FILE
+        
+        # Port-forward all Toxiproxy ports
+        echo "Starting port-forward for Toxiproxy API on localhost:8474..." | tee -a $LOG_FILE
+        kubectl port-forward -n tyk svc/toxiproxy 8474:8474 3000:3000 8080:8080 9091:9091 27017:27017 8379:8379 >> $LOG_FILE 2>&1 &
+        TOXIPROXY_PID=$!
+        echo "Toxiproxy port-forward started with PID $TOXIPROXY_PID" | tee -a $LOG_FILE
+        echo "Toxiproxy API available at: http://localhost:8474"
+        echo "Proxied services:"
+        echo "  - Dashboard: localhost:8474"
+        echo "  - Control Plane Gateway: localhost:8475"
+        echo "  - Data Plane Gateway: localhost:8476"
+        echo "  - MDCB: localhost:8477"
+        echo "  - Control Plane Redis: localhost:8478"
+        echo "  - Data Plane Redis: localhost:8479"
+        echo "  - MongoDB: localhost:8480"
+        echo "To stop port-forwarding, run: task -d k8s/tyk-stack-ingress stop-port-forward"
+
+  run-k6-test-with-dashboard:
+    desc: Runs k6 test with dashboard enabled
+    vars:
+      TARGET_NAMESPACE: '{{.TARGET_NAMESPACE}}'
+      API_NAME: '{{.API_NAME}}'
+      DURATION: '{{.DURATION}}'
+    cmds:
+      - |
+        # Set environment variables and run k6 with dashboard output
+        echo "Starting k6 test with dashboard..."
+        kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE={{.TARGET_NAMESPACE}} API_NAME={{.API_NAME}} TEST_DURATION={{.DURATION}} k6 run --out 'dashboard=host=0.0.0.0&port=5665&period=2s' /scripts/test-script.js &      
+        
+        # Start port-forwarding automatically
+        echo "Starting port-forward for k6 dashboard..."
+        echo "Access the dashboard at http://localhost:5665"
+        echo "Press Ctrl+C to stop the port-forward when done."
+        kubectl port-forward -n tools svc/k6-dashboard 5665:5665
+
+  run-k6-test:
+    desc: Runs k6 test with custom parameters for target namespace, API name, duration, and optional dashboard
+    cmds:
+      - |
+        # Get parameters with defaults
+        TARGET_NAMESPACE={{.target_namespace | default "tyk-dp-1"}}
+        API_NAME={{.api_name | default "test"}}
+        DURATION={{.duration | default "30s"}}
+        DASHBOARD={{.dashboard | default "false"}}
+        
+        echo "Starting k6 test with the following parameters:"
+        echo "Target Namespace: $TARGET_NAMESPACE"
+        echo "API Name: $API_NAME"
+        echo "Test Duration: $DURATION"
+        echo "Dashboard: $DASHBOARD"
+        
+        # Kill any existing k6 dashboard process first
+        echo "Killing any existing k6 dashboard process..."
+        kubectl exec -n tools deploy/k6-runner -c k6 -- pkill -f "k6.*dashboard" || echo "No existing k6 dashboard process found"
+        
+        if [ "$DASHBOARD" = "true" ]; then
+          # Run with dashboard using the dedicated task
+          task -d k8s/tyk-stack-ingress run-k6-test-with-dashboard TARGET_NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME DURATION=$DURATION
+        else
+          # Run k6 without dashboard
+          echo "Starting k6 test without dashboard..."
+          kubectl exec -n tools deploy/k6-runner -c k6 -- env NAMESPACE=$TARGET_NAMESPACE API_NAME=$API_NAME TEST_DURATION=$DURATION k6 run /scripts/test-script.js
+          echo "Test completed."
+        fi
+
+  clean:
+    desc: Deletes all Tyk namespaces and resources from the Kubernetes cluster
+    cmds:
+      - kubectl delete namespace tyk tyk-dp-1 tyk-dp-2 tools

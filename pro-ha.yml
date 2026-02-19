@@ -2,13 +2,15 @@ services:
   tyk:
     profiles: ["all", "master-datacenter"]
     container_name: tyk
-    image: ${tyk_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+    environment:
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     ports:
       - "6000:6000"
       - "8003:8003"
@@ -70,14 +72,14 @@ services:
   tyk-gateway-datacenter-1-alfa:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-1-alfa
-    image: ${tyk_alfa_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8181
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=alfa
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -88,14 +90,14 @@ services:
   tyk-gateway-datacenter-1-beta:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-1-beta
-    image: ${tyk_beta_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8182
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=beta
       - TYK_GW_STORAGE_HOST=redis-datacenter-1
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -106,14 +108,14 @@ services:
   tyk-gateway-datacenter-2-alfa:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-2-alfa
-    image: ${tyk_alfa_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8281
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=alfa
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -124,14 +126,14 @@ services:
   tyk-gateway-datacenter-2-beta:
     profiles: ["all", "slave-datacenter"]
     container_name: tyk-gateway-datacenter-2-beta
-    image: ${tyk_beta_image}
+    image: ${tyk_ee_image}
     pull_policy: ${pull_policy}
     env_file:
       - ${env_file}
     environment:
       - TYK_GW_LISTENPORT=8282
-      - TYK_GW_DBAPPCONFOPTIONS_TAGS=beta
       - TYK_GW_STORAGE_HOST=redis-datacenter-2
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
@@ -139,10 +141,49 @@ services:
       - "8282:8282"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-2.conf"]
 
+  tyk-gateway-datacenter-3-alfa:
+    profiles: ["all", "slave-datacenter"]
+    container_name: tyk-gateway-datacenter-3-alfa
+    image: ${tyk_ee_image}
+    pull_policy: ${pull_policy}
+    env_file:
+      - ${env_file}
+    environment:
+      - TYK_GW_LISTENPORT=8381
+      - TYK_GW_STORAGE_HOST=redis-datacenter-3
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
+      - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates
+      - ${confs_dir}:/conf/
+    ports:
+      - "8381:8381"
+    entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
+
+  tyk-gateway-datacenter-3-beta:
+    profiles: ["all", "slave-datacenter"]
+    container_name: tyk-gateway-datacenter-3-beta
+    image: ${tyk_ee_image}
+    pull_policy: ${pull_policy}
+    env_file:
+      - ${env_file}
+    environment:
+      - TYK_GW_LISTENPORT=8382
+      - TYK_GW_STORAGE_HOST=redis-datacenter-3
+      - TYK_GW_OPENTELEMETRY_ENABLED=true
+      - TYK_GW_SLAVEOPTIONS_SYNCUSEDCERTSONLY=true
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates
+      - ${confs_dir}:/conf/
+    ports:
+      - "8382:8382"
+    entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
+
   gateway-checker:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk
     healthcheck:
@@ -156,14 +197,15 @@ services:
     profiles: ["all", "master-datacenter"]
     image: curlimages/curl
     command: tail -f /dev/null
+    restart: on-failure
     depends_on:
       - tyk-analytics
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://tyk-analytics:3000/hello/ | grep -q '^200$'"]
-      interval: 10s
+      test: ["CMD", "curl", "-s", "-k", "http://tyk-analytics:3000/hello"]
+      interval: 15s
       retries: 30
-      start_period: 10s
-      timeout: 10s
+      start_period: 30s
+      timeout: 30s
 
   gateway-checker-1a:
     profiles: ["all", "slave-datacenter"]
@@ -217,6 +259,32 @@ services:
       start_period: 4s
       timeout: 10s
 
+  gateway-checker-3a:
+    profiles: ["all", "slave-datacenter"]
+    image: curlimages/curl
+    command: tail -f /dev/null
+    depends_on:
+      - tyk-gateway-datacenter-3-alfa
+    healthcheck:
+      test: curl -s -k --fail https://tyk-gateway-datacenter-3-alfa:8381/hello | grep -o '.*status":"pass".*redis":{"status":"pass".*rpc":{"status":"pass"'
+      interval: 5s
+      retries: 30
+      start_period: 4s
+      timeout: 10s
+
+  gateway-checker-3b:
+    profiles: ["all", "slave-datacenter"]
+    image: curlimages/curl
+    command: tail -f /dev/null
+    depends_on:
+      - tyk-gateway-datacenter-3-beta
+    healthcheck:
+      test: curl -s -k --fail https://tyk-gateway-datacenter-3-beta:8382/hello | grep -o '.*status":"pass".*redis":{"status":"pass".*rpc":{"status":"pass"'
+      interval: 5s
+      retries: 30
+      start_period: 4s
+      timeout: 10s
+
   wait_tyk_slaves:
     profiles: ["all", "slave-datacenter"]
     image: hello-world:linux
@@ -224,10 +292,14 @@ services:
         gateway-checker-1a:
             condition: service_healthy
         gateway-checker-1b:
-            condition: service_healthy 
+            condition: service_healthy
         gateway-checker-2a:
             condition: service_healthy
         gateway-checker-2b:
+            condition: service_healthy
+        gateway-checker-3a:
+            condition: service_healthy
+        gateway-checker-3b:
             condition: service_healthy 
 
 
