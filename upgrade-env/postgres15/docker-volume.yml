@@ -1,0 +1,4 @@
+services:
+  postgres:
+    volumes:
+      - ./upgrade-env/postgres15/data_dump:/var/lib/postgresql/data

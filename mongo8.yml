@@ -1,0 +1,20 @@
+services:
+  mongo:
+    profiles: ["all", "master-datacenter"]
+    container_name: mongo
+    image: mongo:8.0-noble
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh mongo:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  wait_db:
+    profiles: ["all", "master-datacenter"]
+    image: hello-world:linux
+    depends_on:
+        mongo:
+            condition: service_healthy

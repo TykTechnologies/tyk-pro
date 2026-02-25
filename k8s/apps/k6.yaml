@@ -1,0 +1,53 @@
+# The ConfigMap k6-test-script is created separately by the run-tyk-cp-dp.sh script
+# from the external file k8s/apps/test-script.js
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k6-runner
+  namespace: tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k6-runner
+  template:
+    metadata:
+      labels:
+        app: k6-runner
+    spec:
+      volumes:
+        - name: k6-test-script
+          configMap:
+            name: k6-test-script
+      containers:
+      - name: k6
+        image: ghcr.io/grafana/xk6-dashboard:0.6.1
+        command: ["sleep", "infinity"]
+        env:
+        - name: API_NAME
+          value: "test"
+        - name: TEST_DURATION
+          value: "30s"
+        - name: TARGET_NAMESPACE
+          value: "tyk-dp-1"
+        volumeMounts:
+          - { name: k6-test-script, mountPath: /scripts }
+        ports:
+          - containerPort: 5665
+            name: dashboard
+        resources:
+          limits: { memory: "512Mi", cpu: "500m" }
+          requests: { memory: "256Mi", cpu: "250m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k6-dashboard
+  namespace: tools
+spec:
+  selector:
+    app: k6-runner
+  ports:
+  - port: 5665
+    targetPort: dashboard
+  type: ClusterIP

@@ -1,0 +1,4 @@
+services:
+  mongo:    
+    volumes:
+      - ./upgrade-env/mongo7/data_dump:/data/db
