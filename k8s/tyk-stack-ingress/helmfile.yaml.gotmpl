@@ -1,0 +1,251 @@
+# Helmfile configuration for multi-version Tyk deployments
+# Each version is defined in versions/<name>/version.yaml
+
+environments:
+  default:
+    values:
+      - useToxiproxy: false
+      - tykDbLicense: "{{ requiredEnv `TYK_DB_LICENSEKEY` }}"
+      - tykMdcbLicense: "{{ requiredEnv `TYK_MDCB_LICENSEKEY` }}"
+---
+repositories:
+  - name: tyk-helm
+    url: https://helm.tyk.io/public/helm/charts/
+  - name: incubator
+    url: https://charts.helm.sh/incubator
+---
+{{- $versionsDir := "./versions" }}
+{{- $versionEntries := readDirEntries $versionsDir }}
+
+releases:
+  {{- range $entry := $versionEntries }}
+  {{- if $entry.IsDir }}
+  {{- $name := $entry.Name }}
+  {{- $versionPath := printf "%s/%s/version.yaml" $versionsDir $name }}
+  {{- $versionContent := readFile $versionPath }}
+  {{- $config := $versionContent | fromYaml }}
+  {{- $cpNamespace := printf "tyk-%s" $name }}
+  {{- $gwTag := default "v5.8.9" (index $config "gwTag") }}
+  {{- $dashTag := default "v5.8.9" (index $config "dashTag") }}
+  {{- $mdcbTag := default "v2.8.0" (index $config "mdcbTag") }}
+  {{- $numDP := default 2 (index $config "numDataPlanes") }}
+  {{- $imageRepo := default "tykio" (index $config "imageRepo") }}
+  {{- $imageRepoType := default "official" (index $config "imageRepoType") }}
+  {{- $useToxiproxy := $.Values.useToxiproxy | default false }}
+  {{- $portsPath := printf "%s/%s/.ports.yaml" $versionsDir $name }}
+  {{- $ports := readFile $portsPath | fromYaml }}
+
+  {{- $gwImageName := "tyk-gateway" }}
+  {{- $dashImageName := "tyk-dashboard" }}
+  {{- $mdcbImageName := "tyk-mdcb-docker" }}
+  {{- if eq $imageRepoType "ecr" }}
+    {{- $gwImageName = "tyk-ee" }}
+    {{- $dashImageName = "tyk-analytics" }}
+    {{- $mdcbImageName = "tyk-sink" }}
+  {{- end }}
+
+  - name: redis-{{ $name }}
+    chart: tyk-helm/simple-redis
+    namespace: {{ $cpNamespace }}
+    labels:
+      version: {{ $name }}
+      tier: cp
+      component: redis
+    createNamespace: true
+    wait: true
+
+  - name: mongo-{{ $name }}
+    chart: incubator/raw
+    namespace: {{ $cpNamespace }}
+    labels:
+      version: {{ $name }}
+      tier: cp
+      component: mongo
+    values:
+      - resources:
+          - apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mongo
+              labels:
+                name: mongo
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  name: mongo
+              template:
+                metadata:
+                  labels:
+                    name: mongo
+                spec:
+                  containers:
+                    - name: mongo
+                      image: mongo:5.0
+                      ports:
+                        - containerPort: 27017
+                      resources:
+                        limits:
+                          cpu: 200m
+                          memory: 512Mi
+                        requests:
+                          cpu: 100m
+                          memory: 256Mi
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: mongo
+              labels:
+                name: mongo
+            spec:
+              type: ClusterIP
+              ports:
+                - port: 27017
+                  targetPort: 27017
+              selector:
+                name: mongo
+    wait: true
+
+  - name: tyk-control-plane-{{ $name }}
+    chart: tyk-helm/tyk-control-plane
+    namespace: {{ $cpNamespace }}
+    needs:
+      - {{ $cpNamespace }}/redis-{{ $name }}
+      - {{ $cpNamespace }}/mongo-{{ $name }}
+    labels:
+      version: {{ $name }}
+      tier: cp
+      component: control-plane
+    missingFileHandler: Warn
+    values:
+      - ./manifests/control-plane-values.yaml
+      - ./versions/{{ $name }}/cp-values.yaml
+    set:
+      - name: global.license.dashboard
+        value: {{ $.Values.tykDbLicense }}
+      - name: global.storageType
+        value: mongo
+      - name: tyk-mdcb.mdcb.license
+        value: {{ $.Values.tykMdcbLicense }}
+      - name: tyk-gateway.gateway.image.repository
+        value: {{ $imageRepo }}/{{ $gwImageName }}
+      - name: tyk-gateway.gateway.image.tag
+        value: {{ $gwTag }}
+      - name: tyk-dashboard.dashboard.image.repository
+        value: {{ $imageRepo }}/{{ $dashImageName }}
+      - name: tyk-dashboard.dashboard.image.tag
+        value: {{ $dashTag }}
+      - name: tyk-mdcb.mdcb.image.repository
+        value: {{ $imageRepo }}/{{ $mdcbImageName }}
+      - name: tyk-mdcb.mdcb.image.tag
+        value: {{ $mdcbTag }}
+        {{- if $useToxiproxy }}
+      - name: global.redis.addrs[0]
+        value: toxiproxy.toxiproxy.svc:{{ index $ports "redisCP" }}
+      - name: global.mongo.mongoURL
+        value: mongodb://toxiproxy.toxiproxy.svc:{{ index $ports "mongo" }}/tyk_analytics
+      - name: tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString
+        value: http://dashboard-svc-tyk-control-plane-{{ $name }}-tyk-dashboard.{{ $cpNamespace }}.svc:3000
+        {{- else }}
+      - name: global.redis.addrs[0]
+        value: redis.{{ $cpNamespace }}.svc:6379
+      - name: global.mongo.mongoURL
+        value: mongodb://mongo.{{ $cpNamespace }}.svc:27017/tyk_analytics
+      - name: tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString
+        value: http://dashboard-svc-tyk-control-plane-{{ $name }}-tyk-dashboard.{{ $cpNamespace }}.svc:3000
+        {{- end }}
+      - name: tyk-gateway.gateway.ingress.hosts[0].host
+        value: chart-gw-{{ $name }}.test
+      - name: tyk-dashboard.dashboard.ingress.hosts[0].host
+        value: chart-dash-{{ $name }}.test
+      - name: tyk-mdcb.mdcb.http_ingress.hosts[0].host
+        value: chart-mdcb-{{ $name }}.test
+    wait: true
+    atomic: true
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: bash
+        args:
+          - -c
+          - |
+            set -euo pipefail
+            echo "Creating data plane secrets from CP credentials in {{ $cpNamespace }}..."
+            ORG_ID=$(kubectl get secret -n {{ $cpNamespace }} tyk-operator-conf \
+              -o jsonpath="{.data.TYK_ORG}" | base64 --decode)
+            USER_API_KEY=$(kubectl get secret -n {{ $cpNamespace }} tyk-operator-conf \
+              -o jsonpath="{.data.TYK_AUTH}" | base64 --decode)
+            {{- range $dpIdx := until (int $numDP) }}
+            {{- $dpN := add $dpIdx 1 }}
+            {{- $dpNs := printf "tyk-%s-dp-%d" $name (int $dpN) }}
+            kubectl create namespace {{ $dpNs }} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n {{ $dpNs }} create secret generic tyk-data-plane-secret \
+              --from-literal=orgId="$ORG_ID" \
+              --from-literal=userApiKey="$USER_API_KEY" \
+              --from-literal=groupID="data-plane-{{ $dpN }}" \
+              --from-literal=APISecret="352d20ee67be67f6340b4c0605b044b7" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "Created tyk-data-plane-secret in {{ $dpNs }}"
+            {{- end }}
+
+  {{- range $dpIndex := until (int $numDP) }}
+  {{- $dpNum := add $dpIndex 1 }}
+  {{- $dpNamespace := printf "tyk-%s-dp-%d" $name (int $dpNum) }}
+
+  - name: dp-{{ $dpNum }}-redis-{{ $name }}
+    chart: tyk-helm/simple-redis
+    namespace: {{ $dpNamespace }}
+    labels:
+      version: {{ $name }}
+      tier: dp
+      component: redis
+      dpIndex: "{{ $dpNum }}"
+    createNamespace: true
+    wait: true
+
+  - name: tyk-data-plane-dp-{{ $dpNum }}-{{ $name }}
+    chart: tyk-helm/tyk-data-plane
+    namespace: {{ $dpNamespace }}
+    needs:
+      - {{ $cpNamespace }}/tyk-control-plane-{{ $name }}
+      - {{ $dpNamespace }}/dp-{{ $dpNum }}-redis-{{ $name }}
+    labels:
+      version: {{ $name }}
+      tier: dp
+      component: data-plane
+      dpIndex: "{{ $dpNum }}"
+    missingFileHandler: Warn
+    values:
+      - ./manifests/data-plane-values.yaml
+      - ./versions/{{ $name }}/dp-values.yaml
+    set:
+      - name: global.remoteControlPlane.useSecretName
+        value: tyk-data-plane-secret
+      - name: global.secrets.useSecretName
+        value: tyk-data-plane-secret
+      - name: tyk-gateway.gateway.image.repository
+        value: {{ $imageRepo }}/{{ $gwImageName }}
+      - name: tyk-gateway.gateway.image.tag
+        value: {{ $gwTag }}
+        {{- if $useToxiproxy }}
+      - name: global.redis.addrs[0]
+        value: toxiproxy.toxiproxy.svc:{{ index $ports (printf "redisDp%d" $dpNum) }}
+      - name: global.remoteControlPlane.connectionString
+        value: toxiproxy.toxiproxy.svc:{{ index $ports "mdcb" }}
+        {{- else }}
+      - name: global.redis.addrs[0]
+        value: redis.{{ $dpNamespace }}.svc:6379
+      - name: global.remoteControlPlane.connectionString
+        value: mdcb-svc-tyk-control-plane-{{ $name }}-tyk-mdcb.{{ $cpNamespace }}.svc:9091
+        {{- end }}
+      - name: tyk-gateway.gateway.ingress.hosts[0].host
+        value: chart-gw-{{ $name }}-dp-{{ $dpNum }}.test
+      - name: tyk-gateway.gateway.ingress.className
+        value: nginx
+      - name: tyk-gateway.gateway.replicaCount
+        value: {{ $dpNum }}
+    wait: true
+
+  {{- end }}
+  {{- end }}
+  {{- end }}

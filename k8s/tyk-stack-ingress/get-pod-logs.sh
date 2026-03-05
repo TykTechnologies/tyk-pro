@@ -1,22 +1,44 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Check if a parameter was provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 POD_NAME_START"
-    exit 1
+cd "$(dirname "$0")"
+source lib.sh
+
+VERSION="${VERSION:-v5-8}"
+NAMESPACE="${NAMESPACE:-tyk-${VERSION}}"
+
+if [ "$#" -lt 1 ]; then
+	echo "Usage: $0 POD_PREFIX [kubectl-logs-options...]"
+	echo "  POD_PREFIX: prefix to match pod names (e.g., dashboard, gateway, mdcb)"
+	echo ""
+	echo "Environment:"
+	echo "  VERSION   Tyk version (default: v5-8)"
+	echo "  NAMESPACE Override namespace (default: tyk-\$VERSION)"
+	echo ""
+	echo "Additional args are passed to kubectl logs (e.g., -f, --tail 100, --previous)"
+	exit 1
 fi
 
-# Check if NAMESPACE is already defined, if not, set to "tyk"
-if [ -z "$NAMESPACE" ]; then
-    NAMESPACE="tyk"
+pattern="$1"
+shift
+
+# get all pods and filter using shell glob (safe, no regex injection)
+pods=$(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+
+if [[ -z "$pods" ]]; then
+	error "No pods found in namespace '$NAMESPACE'"
+	exit 1
 fi
 
-# Pod name pattern to search for, taken from the first command line argument
-POD_NAME_START="$1"
-
-# Find pods by name starting with the provided argument and get logs
-kubectl get pods -n $NAMESPACE --no-headers=true | awk "/^$POD_NAME_START/{print \$1}" | while read pod_name; do
-    echo "Showing logs for pod: $pod_name"
-    kubectl logs "$pod_name" -n $NAMESPACE
-    echo "------------------------------------------------"
+found=0
+for pod in $pods; do
+	if [[ "$pod" == "$pattern"* ]]; then
+		log "Pod: $pod"
+		kubectl logs "$pod" -n "$NAMESPACE" "$@"
+		echo "---"
+		((found++))
+	fi
 done
+
+if [[ $found -eq 0 ]]; then
+	warning "No pods matched pattern '$pattern' in namespace '$NAMESPACE'"
+fi

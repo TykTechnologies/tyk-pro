@@ -52,11 +52,19 @@ EOF
 function run_cloud_provider_kind() {
   local container_name="tyk-ci-cloud-provider-kind"
 
-  if docker ps --format "{{.Names}}" | grep -q "$container_name"; then
-    log "container '$container_name' is already running. recreating it"
+  # check if container exists (running or stopped)
+  if docker container inspect "$container_name" &>/dev/null; then
+    local container_status
+    container_status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null)
 
-    docker rm -f "$container_name"
-    sleep 2
+    if [[ "$container_status" == "running" ]]; then
+      log "container '$container_name' is already running. skipping creation."
+      return 0
+    else
+      log "container '$container_name' exists but is not running (status: $container_status). removing it."
+      docker rm -f "$container_name"
+      sleep 1
+    fi
   fi
 
   log "running container '$container_name' for cloud-provider-kind/cloud-controller-manager image"

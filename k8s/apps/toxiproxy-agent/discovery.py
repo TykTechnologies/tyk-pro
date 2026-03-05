@@ -25,11 +25,26 @@ class ServiceInfo:
 
 
 @dataclass
+class NamespacePorts:
+    redis_cp:  int
+    mdcb:      int
+    mongo:     int
+    dashboard: int
+    gateway:   int
+
+
+@dataclass
+class DPNamespacePorts:
+    redis: int
+
+
+@dataclass
 class DataPlaneInfo:
     namespace: str
     index: int
     redis: Optional[ServiceInfo] = None
     gateway: Optional[ServiceInfo] = None
+    ports: Optional[DPNamespacePorts] = None
 
 
 @dataclass
@@ -40,6 +55,17 @@ class ControlPlaneInfo:
     mdcb: Optional[ServiceInfo] = None
     redis: Optional[ServiceInfo] = None
     mongo: Optional[ServiceInfo] = None
+
+
+CP_REQUIRED_LABELS = [
+    "tyk.io/toxiproxy-port-redis",
+    "tyk.io/toxiproxy-port-mdcb",
+    "tyk.io/toxiproxy-port-mongo",
+    "tyk.io/toxiproxy-port-dashboard",
+    "tyk.io/toxiproxy-port-gateway",
+]
+
+DP_REQUIRED_LABELS = ["tyk.io/toxiproxy-port-redis"]
 
 
 class K8sDiscovery:
@@ -57,7 +83,7 @@ class K8sDiscovery:
 
         self.core_api = client.CoreV1Api()
 
-    def discover_namespaces(self, pattern: str = "tyk-dp-*") -> list[str]:
+    def discover_namespaces(self, pattern: str = "tyk-*-dp-*") -> list[str]:
         try:
             namespaces = self.core_api.list_namespace()
             matching = [
@@ -70,7 +96,7 @@ class K8sDiscovery:
             raise RuntimeError(f"Failed to list namespaces: {e}")
 
     def _extract_dp_index(self, namespace: str) -> int:
-        match = re.search(r"tyk-dp-(\d+)", namespace)
+        match = re.search(r"-dp-(\d+)$", namespace)
         return int(match.group(1)) if match else 0
 
     def _find_service(
@@ -113,7 +139,7 @@ class K8sDiscovery:
         return None
 
     def discover_data_planes(
-        self, namespace_pattern: str = "tyk-dp-*"
+        self, namespace_pattern: str = "tyk-*-dp-*"
     ) -> list[DataPlaneInfo]:
         namespaces = self.discover_namespaces(namespace_pattern)
         data_planes = []
@@ -133,7 +159,7 @@ class K8sDiscovery:
 
         return data_planes
 
-    def discover_control_plane(self, namespace: str = "tyk") -> ControlPlaneInfo:
+    def discover_control_plane(self, namespace: str = "tyk-master") -> ControlPlaneInfo:
         cp = ControlPlaneInfo(namespace=namespace)
 
         cp.dashboard = self._find_service_by_label(
@@ -154,24 +180,75 @@ class K8sDiscovery:
 
         return cp
 
+    def get_namespace_ports(self, namespace: str) -> NamespacePorts:
+        ns = self.core_api.read_namespace(name=namespace)
+        labels = ns.metadata.labels or {}
+
+        missing = [lbl for lbl in CP_REQUIRED_LABELS if lbl not in labels]
+        if missing:
+            raise RuntimeError(
+                f"Namespace '{namespace}' missing required labels: {', '.join(missing)}. "
+                f"Ensure run-tyk-cp-dp.sh has labeled the namespace correctly."
+            )
+
+        return NamespacePorts(
+            redis_cp  = int(labels["tyk.io/toxiproxy-port-redis"]),
+            mdcb      = int(labels["tyk.io/toxiproxy-port-mdcb"]),
+            mongo     = int(labels["tyk.io/toxiproxy-port-mongo"]),
+            dashboard = int(labels["tyk.io/toxiproxy-port-dashboard"]),
+            gateway   = int(labels["tyk.io/toxiproxy-port-gateway"]),
+        )
+
+    def get_dp_namespace_ports(self, namespace: str) -> DPNamespacePorts:
+        ns = self.core_api.read_namespace(name=namespace)
+        labels = ns.metadata.labels or {}
+
+        missing = [lbl for lbl in DP_REQUIRED_LABELS if lbl not in labels]
+        if missing:
+            raise RuntimeError(
+                f"Namespace '{namespace}' missing required labels: {', '.join(missing)}. "
+                f"Ensure run-tyk-cp-dp.sh has labeled the namespace correctly."
+            )
+
+        return DPNamespacePorts(
+            redis = int(labels["tyk.io/toxiproxy-port-redis"]),
+        )
+
+    def get_version(self, namespace: str) -> str:
+        ns = self.core_api.read_namespace(name=namespace)
+        return (ns.metadata.labels or {}).get("tyk.io/version", "")
+
     def patch_toxiproxy_service(
         self,
         namespace: str,
         service_name: str,
         proxy_ports: list[tuple[str, int]],
     ) -> None:
-        ports = [{"name": "api", "port": 8474, "targetPort": 8474, "protocol": "TCP"}]
-        for name, port in proxy_ports:
-            ports.append(
-                {
-                    "name": name,
-                    "port": port,
-                    "targetPort": port,
-                    "protocol": "TCP",
-                }
-            )
+        # read existing ports so successive calls from multiple topologies accumulate
+        # rather than overwrite each other's ports
+        existing_ports: list[dict] = []
+        try:
+            svc = self.core_api.read_namespaced_service(name=service_name, namespace=namespace)
+            if svc.spec.ports:
+                existing_ports = [
+                    {
+                        "name": p.name,
+                        "port": p.port,
+                        "targetPort": p.target_port,
+                        "protocol": p.protocol or "TCP",
+                    }
+                    for p in svc.spec.ports
+                ]
+        except ApiException:
+            pass
 
-        patch = {"spec": {"ports": ports}}
+        # build a name-keyed map so new ports overwrite stale entries with same name
+        port_map: dict[str, dict] = {p["name"]: p for p in existing_ports}
+        port_map["api"] = {"name": "api", "port": 8474, "targetPort": 8474, "protocol": "TCP"}
+        for name, port in proxy_ports:
+            port_map[name] = {"name": name, "port": port, "targetPort": port, "protocol": "TCP"}
+
+        patch = {"spec": {"ports": list(port_map.values())}}
         try:
             self.core_api.patch_namespaced_service(
                 name=service_name,
