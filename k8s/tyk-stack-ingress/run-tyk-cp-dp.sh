@@ -3,6 +3,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+SCRIPT_DIR="$(pwd)"
 source lib.sh
 
 if [ -f .env ]; then
@@ -28,8 +29,8 @@ TOXIPROXY_WAIT_TIMEOUT="${TOXIPROXY_WAIT_TIMEOUT:-120s}"
 NGINX_TIMEOUT="${NGINX_TIMEOUT:-600s}"
 INGRESS_READY_TIMEOUT="${INGRESS_READY_TIMEOUT:-90s}"
 TOOLS_NAMESPACE="tools"
-TYK_PRO_ROOT="$(cd ../.. && pwd)"
-VERSIONS_DIR="./versions"
+TYK_PRO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+VERSIONS_DIR="${SCRIPT_DIR}/versions"
 
 USE_TOXIPROXY="false"
 for param in "$@"; do
