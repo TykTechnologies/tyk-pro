@@ -294,7 +294,7 @@ computePorts
 log "Deploying all versions via Helmfile..."
 HELMFILE_ARGS=()
 if [ "$USE_TOXIPROXY" = "true" ]; then
-	HELMFILE_ARGS+=(--set "useToxiproxy=true")
+	HELMFILE_ARGS+=(--state-values-set "useToxiproxy=true")
 fi
 
 helmfile apply -q --suppress-diff --concurrency=0 "${HELMFILE_ARGS[@]+"${HELMFILE_ARGS[@]}"}"
