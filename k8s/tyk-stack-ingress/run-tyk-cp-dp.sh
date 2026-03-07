@@ -199,6 +199,57 @@ computePorts() {
   done
 }
 
+# precreateToxiProxyProxies - Create proxies before services exist
+# Uses predictive DNS names from .ports.yaml files
+precreateToxiProxyProxies() {
+  if [ "$USE_TOXIPROXY" != "true" ]; then
+    return 0
+  fi
+
+  log "Pre-creating Toxiproxy proxies (predictive mode)"
+
+  local cli_path="$TYK_PRO_ROOT/k8s/apps/toxiproxy-agent/cli.py"
+  if [ ! -f "$cli_path" ]; then
+    error "toxiproxy-agent CLI not found at $cli_path"
+    return 1
+  fi
+
+  local requirements_path="$TYK_PRO_ROOT/k8s/apps/toxiproxy-agent/requirements.txt"
+  if [ -f "$requirements_path" ]; then
+    pip install -q -r "$requirements_path" 2> /dev/null || true
+  fi
+
+  for topo_dir in "$VERSIONS_DIR"/*/; do
+    [ -d "$topo_dir" ] || continue
+    local topo
+    topo=$(basename "$topo_dir")
+
+    local version_file="${topo_dir}version.yaml"
+    [ -f "$version_file" ] || continue
+
+    local ports_file="${topo_dir}.ports.yaml"
+    if [ ! -f "$ports_file" ]; then
+      error "Ports file not found: $ports_file (run computePorts first)"
+      return 1
+    fi
+
+    local num_dps
+    num_dps=$(read_version_field "$version_file" "numDataPlanes" "2")
+
+    log "Pre-creating proxies for $topo with $num_dps data planes"
+
+    python3 "$cli_path" configure \
+      --toxiproxy-url "$TOXIPROXY_URL" \
+      --ports-file "$ports_file" \
+      --topology "$topo" \
+      --num-data-planes "$num_dps" \
+      --toxiproxy-namespace "toxiproxy" \
+      --verbose
+  done
+
+  log "Toxiproxy proxies pre-created successfully"
+}
+
 populateToxiProxy() {
   if [ "$USE_TOXIPROXY" != "true" ]; then
     return 0
@@ -291,6 +342,15 @@ done
 log "Pre-computing toxiproxy ports for all versions..."
 computePorts
 
+# pre-create toxiproxy proxies before helmfile apply (predictive mode)
+if [ "$USE_TOXIPROXY" = "true" ]; then
+  log "Pre-creating Toxiproxy proxies before deployment"
+  precreateToxiProxyProxies || {
+    error "failed to pre-create toxiproxy proxies"
+    exit 1
+  }
+fi
+
 # deploy all versions via helmfile
 log "Deploying all versions via Helmfile..."
 HELMFILE_ARGS=()
@@ -340,14 +400,6 @@ for topo_dir in "$VERSIONS_DIR"/*/; do
       --overwrite > /dev/null
   done
 done
-
-# populate toxiproxy after all services are running
-if [ "$USE_TOXIPROXY" = "true" ]; then
-  populateToxiProxy "$TOXIPROXY_URL" || {
-    error "failed to configure toxiproxy"
-    exit 1
-  }
-fi
 
 # tools namespace
 log "Creating $TOOLS_NAMESPACE namespace"

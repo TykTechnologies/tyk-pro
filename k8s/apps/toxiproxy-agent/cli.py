@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urlparse
 
+import yaml
 import typer
 from discovery import ControlPlaneInfo, DataPlaneInfo, K8sDiscovery, NamespacePorts
 from rich.console import Console
@@ -123,6 +124,70 @@ def build_proxy_config(
                     upstream=dp.redis.address,
                 )
             )
+
+    return ToxiproxyConfig(proxies=proxies)
+
+
+def build_predictive_proxy_config(
+    topology: str,
+    ports: dict,
+    num_data_planes: int,
+    toxiproxy_namespace: str,
+) -> ToxiproxyConfig:
+    """
+    Build proxy configuration from ports file without K8s discovery.
+
+    Uses predictable K8s DNS naming:
+    - CP services: {service}.{cp_namespace}.svc:{original_port}
+    - DP services: {service}.{dp_namespace}.svc:{original_port}
+    """
+    cp_namespace = f"tyk-{topology}"
+    proxies = []
+
+    # Control Plane Redis: simple-redis chart creates service named "redis"
+    proxies.append(ProxyConfig(
+        name=f"redis-cp-{topology}",
+        listen=f"[::]:{ports['redisCP']}",
+        upstream=f"redis.{cp_namespace}.svc:6379",
+    ))
+
+    # MongoDB: inline manifest creates service named "mongo"
+    proxies.append(ProxyConfig(
+        name=f"mongo-{topology}",
+        listen=f"[::]:{ports['mongo']}",
+        upstream=f"mongo.{cp_namespace}.svc:27017",
+    ))
+
+    # MDCB: tyk-control-plane chart creates service with this naming pattern
+    proxies.append(ProxyConfig(
+        name=f"mdcb-{topology}",
+        listen=f"[::]:{ports['mdcb']}",
+        upstream=f"mdcb-svc-tyk-control-plane-{topology}-tyk-mdcb.{cp_namespace}.svc:9091",
+    ))
+
+    # Dashboard
+    proxies.append(ProxyConfig(
+        name=f"dashboard-{topology}",
+        listen=f"[::]:{ports['dashboard']}",
+        upstream=f"dashboard-svc-tyk-control-plane-{topology}-tyk-dashboard.{cp_namespace}.svc:3000",
+    ))
+
+    # CP Gateway
+    proxies.append(ProxyConfig(
+        name=f"cp-gateway-{topology}",
+        listen=f"[::]:{ports['gateway']}",
+        upstream=f"gateway-svc-tyk-control-plane-{topology}-tyk-gateway.{cp_namespace}.svc:8080",
+    ))
+
+    # Data Plane Redis
+    for i in range(1, num_data_planes + 1):
+        dp_namespace = f"tyk-{topology}-dp-{i}"
+        port_key = f"redisDp{i}"
+        proxies.append(ProxyConfig(
+            name=f"redis-dp-{i}-{topology}",
+            listen=f"[::]:{ports[port_key]}",
+            upstream=f"redis.{dp_namespace}.svc:6379",
+        ))
 
     return ToxiproxyConfig(proxies=proxies)
 
@@ -272,6 +337,23 @@ def configure(
         "-x",
         help="Toxiproxy namespace (where toxiproxy service is deployed)",
     ),
+    ports_file: Optional[str] = typer.Option(
+        None,
+        "--ports-file",
+        "-p",
+        help="Path to .ports.yaml file. When provided, skips K8s discovery and uses predictive DNS names.",
+    ),
+    topology: Optional[str] = typer.Option(
+        None,
+        "--topology",
+        help="Topology name (e.g., v5-8, master). Required with --ports-file.",
+    ),
+    num_data_planes: Optional[int] = typer.Option(
+        None,
+        "--num-data-planes",
+        "-d",
+        help="Number of data planes. Required with --ports-file.",
+    ),
     output_env: Optional[str] = typer.Option(
         None,
         "--output-env",
@@ -291,22 +373,58 @@ def configure(
     ),
 ):
     try:
-        if verbose:
-            err_console.print("[blue]Discovering Kubernetes services...[/blue]")
+        # Validate predictive mode inputs
+        if ports_file:
+            if not topology:
+                err_console.print("[red]--topology is required when using --ports-file[/red]")
+                raise typer.Exit(1)
+            if not num_data_planes:
+                err_console.print("[red]--num-data-planes is required when using --ports-file[/red]")
+                raise typer.Exit(1)
 
-        discovery = K8sDiscovery()
-        control_plane = discovery.discover_control_plane(control_namespace)
-        data_planes = discovery.discover_data_planes(namespace_pattern)
+        # Build config: predictive or discovery mode
+        if ports_file:
+            # PREDICTIVE MODE: Read ports file, build from naming conventions
+            if verbose:
+                err_console.print(f"[blue]Reading ports from {ports_file}...[/blue]")
 
-        if verbose:
-            err_console.print(f"[green]Found {len(data_planes)} data plane(s)[/green]")
+            with open(ports_file, "r") as f:
+                ports = yaml.safe_load(f)
 
-        version = discovery.get_version(control_namespace)
-        cp_ports = discovery.get_namespace_ports(control_namespace)
-        for dp in data_planes:
-            dp.ports = discovery.get_dp_namespace_ports(dp.namespace)
+            config = build_predictive_proxy_config(
+                topology=topology,
+                ports=ports,
+                num_data_planes=num_data_planes,
+                toxiproxy_namespace=toxiproxy_namespace,
+            )
 
-        config = build_proxy_config(control_plane, data_planes, version, cp_ports)
+            # For env vars and other outputs, construct synthetic data plane info
+            data_planes = [
+                DataPlaneInfo(namespace=f"tyk-{topology}-dp-{i}", index=i)
+                for i in range(1, num_data_planes + 1)
+            ]
+            version = topology
+
+            if verbose:
+                err_console.print(f"[green]Built predictive config with {len(config.proxies)} proxies[/green]")
+        else:
+            # DISCOVERY MODE: Existing behavior
+            if verbose:
+                err_console.print("[blue]Discovering Kubernetes services...[/blue]")
+
+            discovery = K8sDiscovery()
+            control_plane = discovery.discover_control_plane(control_namespace)
+            data_planes = discovery.discover_data_planes(namespace_pattern)
+
+            if verbose:
+                err_console.print(f"[green]Found {len(data_planes)} data plane(s)[/green]")
+
+            version = discovery.get_version(control_namespace)
+            cp_ports = discovery.get_namespace_ports(control_namespace)
+            for dp in data_planes:
+                dp.ports = discovery.get_dp_namespace_ports(dp.namespace)
+
+            config = build_proxy_config(control_plane, data_planes, version, cp_ports)
 
         if output_hosts:
             console.print("\n".join(generate_hosts_entries(data_planes)))
@@ -334,7 +452,10 @@ def configure(
                 f"[green]Configured {len(config.proxies)} proxies[/green]"
             )
 
+        # Patch Toxiproxy service - need K8s access for this
         try:
+            # Reuse discovery instance for service patching even in predictive mode
+            discovery = K8sDiscovery()
             discovery.patch_toxiproxy_service(
                 namespace=toxiproxy_namespace,
                 service_name="toxiproxy",
@@ -348,11 +469,12 @@ def configure(
 
         try:
             cm_entry = _build_configmap_entry(version, config, data_planes)
+            discovery_for_cm = K8sDiscovery()
             write_installation_configmap(
                 version=version,
                 cp_proxies=cm_entry["cpProxies"],
                 data_planes=cm_entry["dataPlanes"],
-                core_api=discovery.core_api,
+                core_api=discovery_for_cm.core_api,
                 toxiproxy_namespace=toxiproxy_namespace,
             )
             if verbose:
