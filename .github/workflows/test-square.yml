@@ -17,7 +17,7 @@ env:
 jobs:
   test-controller-api:
     if: github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     outputs:
       envfiles: ${{ steps.params.outputs.envfiles }}
       pump: ${{ steps.params.outputs.pump }}
@@ -37,7 +37,7 @@ jobs:
   api-tests:
     needs:
       - test-controller-api
-    runs-on: ubuntu-latest-m-2
+    runs-on: warp-ubuntu-latest-x64-4x
     env:
       XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
       BASE_REF: master
@@ -219,7 +219,7 @@ jobs:
           overwrite: true
   test-controller-ui:
     if: github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     outputs:
       envfiles: ${{ steps.params.outputs.envfiles }}
       pump: ${{ steps.params.outputs.pump }}
@@ -239,7 +239,7 @@ jobs:
   ui-tests:
     needs:
       - test-controller-ui
-    runs-on: ubuntu-latest-m-2
+    runs-on: warp-ubuntu-latest-x64-4x
     env:
       XUNIT_REPORT_PATH: ${{ github.workspace}}/test-results.xml
       BASE_REF: master
@@ -426,7 +426,7 @@ jobs:
           overwrite: true
   release:
     if: ${{ startsWith(github.ref, 'refs/tags') }}
-    runs-on: ubuntu-latest-m-2
+    runs-on: warp-ubuntu-latest-x64-4x
     needs:
       - api-tests
       - ui-tests
