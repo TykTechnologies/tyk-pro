@@ -28,8 +28,8 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tui.internal.dev.tyk.technology is trusted
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/api.gho" | tee -a "$GITHUB_OUTPUT"
+          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
+          curl -s --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/api.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-api" >> $GITHUB_STEP_SUMMARY
@@ -230,8 +230,8 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tui.internal.dev.tyk.technology is trusted
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/ui.gho" | tee -a "$GITHUB_OUTPUT"
+          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
+          curl -s --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/ui.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-ui" >> $GITHUB_STEP_SUMMARY
