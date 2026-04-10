@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 env:
-  VARIATION: prod-variations
+  VARIATION: prod-variation
   BASE_REF: ${{startsWith(github.event_name, 'pull_request') && github.base_ref || github.ref_name}}
 jobs:
   test-controller-api:
@@ -27,9 +27,20 @@ jobs:
         id: params
         shell: bash
         run: |
-          set -eo pipefail
-          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tui.internal.dev.tyk.technology is trusted
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/api.gho" | tee -a "$GITHUB_OUTPUT"
+          REF=$BASE_REF
+          # Fallback to master for feature branches (anything that isn't a release branch)
+          if [[ ! "$REF" =~ ^release-.* ]]; then
+            REF="master"
+          fi
+          
+          EVENT_NAME=${{ github.event_name }}
+          # Fallback to pull_request for manual triggers
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            EVENT_NAME="pull_request"
+          fi
+          
+          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
+          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/$EVENT_NAME/api.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-api" >> $GITHUB_STEP_SUMMARY
@@ -152,7 +163,7 @@ jobs:
         working-directory: tyk-analytics/tests/api
         run: |
           pytest="pytest --ci --random-order --force-flaky --no-success-flaky-report --maxfail=3 --junitxml=${XUNIT_REPORT_PATH} --cache-clear --ignore=./tests/mdcb -v --log-cli-level=ERROR"
-          pip install --require-hashes -r requirements.txt
+          pip install --no-deps -r requirements.txt
           cat >pytest.env <<-EOF
           TYK_TEST_BASE_URL=http://localhost:3000/
           TYK_TEST_GW_URL=https://localhost:8080/
@@ -169,6 +180,8 @@ jobs:
           TYK_TEST_GRAPHQL_FAKER_HOST=graphql-faker
           GATEWAY_CONTAINER_NAME=tyk
           USER_API_SECRET=${{ steps.env_up.outputs.USER_API_SECRET }}
+          TYK_TEST_KEYCLOAK_INTERNAL_URL=http://keycloak:8080
+          TYK_TEST_MCP_URL=http://mcp-server:7878
           EOF
           env $(cat pytest.env | xargs) $pytest -m "${{ matrix.envfiles.apimarkers }}"
       - name: Generate metadata and upload test reports
@@ -230,8 +243,20 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tui.internal.dev.tyk.technology is trusted
-          curl -s --retry 5 --retry-delay 10 --fail-with-body "http://tui.internal.dev.tyk.technology/v2/$VARIATION/tyk-pro/$BASE_REF/${{ github.event_name}}/ui.gho" | tee -a "$GITHUB_OUTPUT"
+          REF=$BASE_REF
+          # Fallback to master for feature branches (anything that isn't a release branch)
+          if [[ ! "$REF" =~ ^release-.* ]]; then
+            REF="master"
+          fi
+          
+          EVENT_NAME=${{ github.event_name }}
+          # Fallback to pull_request for manual triggers
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            EVENT_NAME="pull_request"
+          fi
+          
+          # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
+          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/$EVENT_NAME/ui.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-ui" >> $GITHUB_STEP_SUMMARY
