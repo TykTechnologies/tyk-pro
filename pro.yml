@@ -12,6 +12,9 @@ services:
       - "6000:6000"
       - "8003:8003"
       - "8080:8080"
+    depends_on:
+      vault-seed:
+        condition: service_completed_successfully
     entrypoint: ["/bin/bash"]
     command:
       - "-c"

@@ -122,6 +122,30 @@ services:
       - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
     cap_add:
       - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      retries: 10
+      start_period: 3s
+      timeout: 5s
+
+  vault-seed:
+    profiles: ["all", "master-datacenter"]
+    container_name: vault-seed
+    image: hashicorp/vault:latest
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=root
+    depends_on:
+      vault:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        vault kv put secret/oauth/cert_file cert_file="placeholder" value="placeholder"
+        vault kv put secret/oauth/key_file key_file="placeholder" value="placeholder"
+        echo "Vault seeded with placeholder OAuth mTLS cert_file and key_file secrets"
+    restart: "no"
 
   upstream-auth-server:
     profiles: ["all", "master-datacenter"]
