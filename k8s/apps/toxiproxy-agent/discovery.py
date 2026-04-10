@@ -159,7 +159,7 @@ class K8sDiscovery:
 
         return data_planes
 
-    def discover_control_plane(self, namespace: str = "tyk-master") -> ControlPlaneInfo:
+    def discover_control_plane(self, namespace: str = "tyk-lts") -> ControlPlaneInfo:
         cp = ControlPlaneInfo(namespace=namespace)
 
         cp.dashboard = self._find_service_by_label(

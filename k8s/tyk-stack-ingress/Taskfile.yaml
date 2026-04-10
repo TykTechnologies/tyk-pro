@@ -3,9 +3,9 @@ version: "3"
 
 vars:
   # default version for single-version operations
-  VERSION: '{{.VERSION | default "v5-8"}}'
-  CP_NAMESPACE: 'tyk-{{.VERSION | default "v5-8"}}'
-  DP_NAMESPACE: 'tyk-{{.VERSION | default "v5-8"}}-dp-{{.DP_INDEX | default "1"}}'
+  VERSION: '{{.VERSION | default "lts"}}'
+  CP_NAMESPACE: 'tyk-{{.VERSION | default "lts"}}'
+  DP_NAMESPACE: 'tyk-{{.VERSION | default "lts"}}-dp-{{.DP_INDEX | default "1"}}'
 
 tasks:
   create-cluster:
@@ -24,7 +24,7 @@ tasks:
       - ./run-tyk-cp-dp.sh toxiproxy=true
 
   get-dp-secret:
-    desc: Gets the tyk-data-plane-secret from a DP namespace (use VERSION=v5-8 DP_INDEX=1)
+    desc: Gets the tyk-data-plane-secret from a DP namespace (use VERSION=lts DP_INDEX=1)
     cmds:
       - |
         echo "=== Tyk Data Plane Secret ({{.DP_NAMESPACE}}) ==="
@@ -35,7 +35,7 @@ tasks:
         echo "==========================="
 
   start-port-forward:
-    desc: Port-forwards all Tyk services (use VERSION=v5-8 to target a version)
+    desc: Port-forwards all Tyk services (use VERSION=lts to target a version)
     cmds:
       - |
         LOG_FILE="tyk-port-forward.log"
@@ -111,7 +111,7 @@ tasks:
         kubectl port-forward -n tools svc/k6-dashboard 5665:5665
 
   run-k6-test:
-    desc: Runs k6 test with custom parameters (use VERSION=v5-8 DP_INDEX=1)
+    desc: Runs k6 test with custom parameters (use VERSION=lts DP_INDEX=1)
     cmds:
       - |
         TARGET_NAMESPACE={{.target_namespace | default .DP_NAMESPACE}}

@@ -22,10 +22,10 @@ helmfile apply
 helmfile apply --state-values-set useToxiproxy=true
 
 # Deploy specific version
-helmfile -l version=v5-8 apply
+helmfile -l version=lts apply
 
 # Deploy control plane only
-helmfile -l version=v5-8,tier=cp apply
+helmfile -l version=lts,tier=cp apply
 ```
 
 Create Kind cluster:
@@ -59,8 +59,8 @@ yamllint versions/*/version.yaml
 ```bash
 helmfile list
 kubectl get ns | grep tyk
-kubectl get pods -n tyk-v5-8
-kubectl get pods -n tyk-v5-8-dp-1
+kubectl get pods -n tyk-lts
+kubectl get pods -n tyk-lts-dp-1
 ```
 
 **Test resilience (requires toxiproxy=true deployment):**
@@ -77,8 +77,8 @@ Required environment variables (set in `.env` file):
 
 Optional (configured in `versions/*/version.yaml`):
 - `imageRepo` - Docker registry (default: tykio, or ECR URL)
-- `dashTag` - Dashboard image tag (default: v5.11.1)
-- `gwTag` - Gateway image tag (default: v5.11.1)
+- `dashTag` - Dashboard image tag (default: v5.12.0)
+- `gwTag` - Gateway image tag (default: v5.12.0)
 - `numDataPlanes` - Number of data planes (default: 2)
 
 ECR images require AWS credentials and `ecrcred` secret creation.
@@ -93,8 +93,8 @@ Toxiproxy agent CLI location: `../apps/toxiproxy-agent/cli.py`
 - dashboard, gateway, mdcb, pump, redis, mongo
 
 **Namespaces (version-scoped):**
-- Control plane: `tyk-<version>` (e.g., `tyk-v5-8`)
-- Data planes: `tyk-<version>-dp-<n>` (e.g., `tyk-v5-8-dp-1`)
+- Control plane: `tyk-<version>` (e.g., `tyk-lts`)
+- Data planes: `tyk-<version>-dp-<n>` (e.g., `tyk-lts-dp-1`)
 - Tools: `tools`
 - Toxiproxy: `toxiproxy`
 

@@ -3,7 +3,7 @@
 cd "$(dirname "$0")"
 source lib.sh
 
-VERSION="${VERSION:-v5-8}"
+VERSION="${VERSION:-lts}"
 NAMESPACE="${NAMESPACE:-tyk-${VERSION}}"
 
 if [ "$#" -lt 1 ]; then
@@ -11,7 +11,7 @@ if [ "$#" -lt 1 ]; then
 	echo "  POD_PREFIX: prefix to match pod names (e.g., dashboard, gateway, mdcb)"
 	echo ""
 	echo "Environment:"
-	echo "  VERSION   Tyk version (default: v5-8)"
+	echo "  VERSION   Tyk version (default: lts)"
 	echo "  NAMESPACE Override namespace (default: tyk-\$VERSION)"
 	echo ""
 	echo "Additional args are passed to kubectl logs (e.g., -f, --tail 100, --previous)"

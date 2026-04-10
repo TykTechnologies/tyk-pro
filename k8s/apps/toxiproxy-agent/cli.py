@@ -323,13 +323,13 @@ def configure(
         "tyk-*-dp-*",
         "--namespace-pattern",
         "-n",
-        help="Glob pattern for data plane namespaces (e.g. tyk-v5-8-dp-*)",
+        help="Glob pattern for data plane namespaces (e.g. tyk-lts-dp-*)",
     ),
     control_namespace: str = typer.Option(
-        "tyk-master",
+        "tyk-lts",
         "--control-namespace",
         "-c",
-        help="Control plane namespace (e.g. tyk-v5-8, tyk-master)",
+        help="Control plane namespace (e.g. tyk-lts, tyk-stable, tyk-master)",
     ),
     toxiproxy_namespace: str = typer.Option(
         "toxiproxy",
@@ -346,7 +346,7 @@ def configure(
     topology: Optional[str] = typer.Option(
         None,
         "--topology",
-        help="Topology name (e.g., v5-8, master). Required with --ports-file.",
+        help="Topology name (e.g., lts, stable, master). Required with --ports-file.",
     ),
     num_data_planes: Optional[int] = typer.Option(
         None,
