@@ -102,7 +102,7 @@ services:
     container_name: rabbitmq
     image: rabbitmq:4.1.0-management-alpine
     ports:
-      - "5672:5672"   # AMQP protocol
+      - "5672:5672" # AMQP protocol
       - "15672:15672" # Management UI
       - "1883:1883"
     environment:
@@ -135,7 +135,11 @@ services:
     volumes:
       - ./keycloak/mcp-test-realm.json:/opt/keycloak/data/import/mcp-test-realm.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q UP"]
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q UP",
+        ]
       interval: 10s
       timeout: 10s
       retries: 15
@@ -153,7 +157,15 @@ services:
       - PORT=7878
       - DEBUG=false
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7878/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:7878/health",
+        ]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -176,4 +188,4 @@ services:
     container_name: upstream-auth-server
     image: kennethreitz/httpbin
     ports:
-      - "8080:80"
+      - "8090:80"
