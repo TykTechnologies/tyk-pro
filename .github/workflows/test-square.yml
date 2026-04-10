@@ -27,13 +27,20 @@ jobs:
         id: params
         shell: bash
         run: |
-          set -eo pipefail
           REF=$BASE_REF
-          if [ "$REF" = "main" ]; then
+          # Fallback to master for feature branches (anything that isn't a release branch)
+          if [[ ! "$REF" =~ ^release-.* ]]; then
             REF="master"
           fi
+          
+          EVENT_NAME=${{ github.event_name }}
+          # Fallback to pull_request for manual triggers
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            EVENT_NAME="pull_request"
+          fi
+          
           # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
-          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/${{ github.event_name}}/api.gho" | tee -a "$GITHUB_OUTPUT"
+          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/$EVENT_NAME/api.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-api" >> $GITHUB_STEP_SUMMARY
@@ -237,11 +244,19 @@ jobs:
         run: |
           set -eo pipefail
           REF=$BASE_REF
-          if [ "$REF" = "main" ]; then
+          # Fallback to master for feature branches (anything that isn't a release branch)
+          if [[ ! "$REF" =~ ^release-.* ]]; then
             REF="master"
           fi
+          
+          EVENT_NAME=${{ github.event_name }}
+          # Fallback to pull_request for manual triggers
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            EVENT_NAME="pull_request"
+          fi
+          
           # SECURITY: curl output piped to GITHUB_OUTPUT -- ensure tyktechnologies.github.io is trusted
-          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/${{ github.event_name}}/ui.gho" | tee -a "$GITHUB_OUTPUT"
+          curl -s -L --retry 5 --retry-delay 10 --fail-with-body "https://tyktechnologies.github.io/gromit/v2/$VARIATION/tyk-pro/$REF/$EVENT_NAME/ui.gho" | tee -a "$GITHUB_OUTPUT"
           if ! [[ $VARIATION =~ prod ]] ;then
               echo "::warning file=.github/workflows/release.yml,line=24,col=1,endColumn=8::Using non-prod variation"
               echo "### :warning: You are using VARIATION=${VARIATION} in test-controller-ui" >> $GITHUB_STEP_SUMMARY
