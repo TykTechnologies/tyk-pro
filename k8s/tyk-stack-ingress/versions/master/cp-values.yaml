@@ -1,0 +1,3 @@
+# Per-version overrides for control plane
+# These values override/extend manifests/control-plane-values.yaml
+extraEnvs: []

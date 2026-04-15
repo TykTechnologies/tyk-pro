@@ -100,7 +100,7 @@ global:
     #
     # Default value: redis.{{ .Release.Namespace }}.svc:6379
     # addrs:
-    #   - toxiproxy.tyk.svc:6379
+    #   - toxiproxy.toxiproxy.svc:6379
     #   Example using tyk simple redis chart
     #   - redis.tyk.svc:6379
     #   Example using bitnami/redis
