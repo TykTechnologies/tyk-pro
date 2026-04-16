@@ -21,7 +21,7 @@ tasks:
       DB: '{{ or .DB "mongo44" }}'
       CACHE: '{{ or .CACHE "redis6" }}'
       VARIATION: '{{or .VARIATION "murmur64" }}'
-      confs_dir: './{{ .FLAVOUR }}'
+      confs_dir: "./{{ .FLAVOUR }}"
       env_file: local-{{.DB}}.env
     cmds:
       - |
@@ -41,7 +41,7 @@ tasks:
       DB: '{{ or .DB "mongo7" }}'
       CACHE: '{{ or .CACHE "redis6" }}'
       VARIATION: '{{or .VARIATION "murmur64" }}'
-      confs_dir: './{{ .FLAVOUR }}'
+      confs_dir: "./{{ .FLAVOUR }}"
       env_file: upgrade.env
     cmds:
       - |
@@ -53,7 +53,6 @@ tasks:
           docker compose -p auto -f pro-ha.yml -f deps_pro-ha.yml -f ${DB}.yml -f ${CACHE}.yml --env-file master.env --profile slave-datacenter up --quiet-pull -d --build
         fi
 
-
   clean:
     desc: Tears down all local infrastructure including networking
     env:
@@ -61,7 +60,7 @@ tasks:
       DB: '{{ or .DB "mongo44" }}'
       CACHE: '{{ or .CACHE "redis6" }}'
       VARIATION: '{{or .VARIATION "murmur64" }}'
-      confs_dir: './{{ .FLAVOUR }}'
+      confs_dir: "./{{ .FLAVOUR }}"
       env_file: local-{{.DB}}.env
     cmds:
       - docker compose -p auto -f ${FLAVOUR}.yml -f deps_${FLAVOUR}.yml -f ${DB}.yml -f ${CACHE}.yml --env-file master.env --env-file master.env --profile all down --remove-orphans
@@ -72,11 +71,30 @@ tasks:
       Deploys pytest container that runs against local infrastructure using docker compose manifest
       - For mdcb you may want to use the ARGS "--ci -m "mdcb""
       - For non mdcb deployments something like "-m "not local and not mdcb""
-    cmds: 
+    cmds:
       - |
         docker run --rm --network auto_default --env-file ./pytest.env \
         754489498669.dkr.ecr.eu-central-1.amazonaws.com/tyk-automated-tests:master \
         pytest -c pytest_ci.ini {{.CLI_ARGS}}
+
+  seed-vault:
+    desc: Seeds Vault with placeholder OAuth mTLS secrets required for local gateway startup
+    cmds:
+      - |
+        echo "Waiting for Vault to be ready..."
+        until curl -s http://localhost:8200/v1/sys/health | grep -q '"initialized":true'; do
+          sleep 2
+        done
+        echo "Seeding Vault with placeholder OAuth mTLS secrets..."
+        curl -s -X POST http://localhost:8200/v1/secret/data/oauth/cert_file \
+          -H "X-Vault-Token: root" \
+          -H "Content-Type: application/json" \
+          -d '{"data": {"cert_file": "placeholder", "value": "placeholder"}}'
+        curl -s -X POST http://localhost:8200/v1/secret/data/oauth/key_file \
+          -H "X-Vault-Token: root" \
+          -H "Content-Type: application/json" \
+          -d '{"data": {"key_file": "placeholder", "value": "placeholder"}}'
+        echo "Vault seeded successfully. You can now start your local gateway."
 
   healthcheck:
     desc: Usefull healthchecks to ensure services are up and running

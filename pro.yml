@@ -12,6 +12,9 @@ services:
       - "6000:6000"
       - "8003:8003"
       - "8080:8080"
+    depends_on:
+      vault-seed:
+        condition: service_completed_successfully
     entrypoint: ["/bin/bash"]
     command:
       - "-c"
@@ -34,7 +37,7 @@ services:
       - "3000:3000"
       - "5000:5000"
       - "1026:1025"
-    command: [ "--conf", "/conf/tyk-analytics.conf" ]
+    command: ["--conf", "/conf/tyk-analytics.conf"]
     restart: on-failure
 
   tyk-pump:
@@ -45,11 +48,11 @@ services:
       - ${env_file}
     volumes:
       - ${confs_dir}:/conf/
-    ports:    
+    ports:
       - "8061:8061"
-    command: [ "--conf", "/conf/tyk-pump.conf" ]
+    command: ["--conf", "/conf/tyk-pump.conf"]
     depends_on:
-      - wait_deps
+      - wait_db
 
   gateway-checker:
     profiles: ["all", "master-datacenter"]
@@ -71,7 +74,11 @@ services:
     depends_on:
       - tyk-analytics
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://tyk-analytics:3000/hello/ | grep -q '^200$'"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -o /dev/null -w '%{http_code}' http://tyk-analytics:3000/hello/ | grep -q '^200$'",
+        ]
       interval: 10s
       retries: 30
       start_period: 10s
@@ -81,7 +88,7 @@ services:
     profiles: ["all", "master-datacenter"]
     image: hello-world:linux
     depends_on:
-        gateway-checker:
-            condition: service_healthy
-        dashboard-checker:
-            condition: service_healthy 
+      gateway-checker:
+        condition: service_healthy
+      dashboard-checker:
+        condition: service_healthy
