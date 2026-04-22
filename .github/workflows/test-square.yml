@@ -67,6 +67,14 @@ jobs:
           - pump: $ECR/tyk-pump:master
             sink: tykio/tyk-mdcb-docker:v2.4
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.PROBE_APP_ID }}
+          private-key: ${{ secrets.PROBE_APP_PRIVATE_KEY }}
+          owner: TykTechnologies
+
       - uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
         with:
           role-to-assume: arn:aws:iam::754489498669:role/ecr_rw_tyk
@@ -94,7 +102,7 @@ jobs:
         id: env_up
         env:
           pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
         run: |
@@ -127,7 +135,7 @@ jobs:
         with:
           repository: TykTechnologies/tyk-analytics
           path: tyk-analytics
-          token: ${{ secrets.ORG_GH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
           sparse-checkout: tests/api
       - name: Choosing test code branch
@@ -213,7 +221,7 @@ jobs:
         working-directory: auto
         env:
           pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
           ECR: ${{ steps.ecr.outputs.registry }}
@@ -283,6 +291,14 @@ jobs:
           - pump: $ECR/tyk-pump:master
             sink: tykio/tyk-mdcb-docker:v2.4
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.PROBE_APP_ID }}
+          private-key: ${{ secrets.PROBE_APP_PRIVATE_KEY }}
+          owner: TykTechnologies
+
       - uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
         with:
           role-to-assume: arn:aws:iam::754489498669:role/ecr_rw_tyk
@@ -310,7 +326,7 @@ jobs:
         id: env_up
         env:
           pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
         run: |
@@ -343,7 +359,7 @@ jobs:
         with:
           repository: TykTechnologies/tyk-analytics
           path: tyk-analytics
-          token: ${{ secrets.ORG_GH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
           sparse-checkout: tests/ui
       - name: Choosing test code branch
@@ -378,7 +394,7 @@ jobs:
           cache: 'npm'
       - name: Fix private module deps
         env:
-          TOKEN: '${{ secrets.ORG_GH_TOKEN }}'
+          TOKEN: ${{ steps.app-token.outputs.token }}
         run: >
           git config --global url."https://${TOKEN}@github.com".insteadOf "https://github.com"
       - name: Execute UI tests
@@ -432,7 +448,7 @@ jobs:
         working-directory: auto
         env:
           pull_policy: 'if_not_present'
-          GH_TOKEN: ${{ secrets.ORG_GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TYK_DB_LICENSEKEY: ${{ secrets.DASH_LICENSE }}
           TYK_MDCB_LICENSE: ${{ secrets.MDCB_LICENSE }}
           ECR: ${{ steps.ecr.outputs.registry }}
@@ -458,10 +474,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.PROBE_APP_ID }}
+          private-key: ${{ secrets.PROBE_APP_PRIVATE_KEY }}
+          owner: TykTechnologies
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
         with:
-          token: ${{ secrets.ORG_GH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           body_path: release.md
