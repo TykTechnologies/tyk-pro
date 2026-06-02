@@ -33,7 +33,7 @@ services:
   valkey-datacenter-2:
     profiles: ["all", "slave-datacenter"]
     container_name: redis-datacenter-2
-    image: valkey/valkey:8.0
+    image: valkey/valkey:8.0.0
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
