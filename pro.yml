@@ -8,6 +8,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp:/tmp
     ports:
       - "6000:6000"
       - "8003:8003"
