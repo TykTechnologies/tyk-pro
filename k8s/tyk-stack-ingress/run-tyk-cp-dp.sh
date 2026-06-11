@@ -3,6 +3,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+SCRIPT_DIR="$(pwd)"
 source lib.sh
 
 if [ -f .env ]; then
@@ -12,31 +13,24 @@ fi
 ######################################
 # required env variables
 ######################################
-if [[ -z "${TYK_MDCB_LICENSEKEY}" ]]; then
-  error "TYK_MDCB_LICENSEKEY is not set. Please set it in the .env file or export it."
+if [[ -z "${TYK_DB_LICENSEKEY:-}" ]]; then
+  error "TYK_DB_LICENSEKEY is not set. Please set it in the .env file or export it."
   exit 1
 fi
-if [[ -z "${TYK_DB_LICENSEKEY}" ]]; then
-  error "TYK_DB_LICENSEKEY is not set. Please set it in the .env file or export it."
+if [[ -z "${TYK_MDCB_LICENSEKEY:-}" ]]; then
+  error "TYK_MDCB_LICENSEKEY is not set. Please set it in the .env file or export it."
   exit 1
 fi
 
 ######################################
 # global configurations
 ######################################
-NUM_DATA_PLANES="${NUM_DATA_PLANES:-2}"
-NGINX_TIMEOUT="${NGINX_TIMEOUT:-600s}"
 TOXIPROXY_WAIT_TIMEOUT="${TOXIPROXY_WAIT_TIMEOUT:-120s}"
+NGINX_TIMEOUT="${NGINX_TIMEOUT:-600s}"
 INGRESS_READY_TIMEOUT="${INGRESS_READY_TIMEOUT:-90s}"
-ENABLE_PUMP="${ENABLE_PUMP:-true}"
-TYK_PRO_ROOT="$(cd ../.. && pwd)"
-
-CP_NAMESPACE="tyk"
-DP_NAMESPACE_PREFIX="tyk-dp"
 TOOLS_NAMESPACE="tools"
-dp_namespace() {
-  echo "${DP_NAMESPACE_PREFIX}-${1}"
-}
+TYK_PRO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+VERSIONS_DIR="${SCRIPT_DIR}/versions"
 
 USE_TOXIPROXY="false"
 for param in "$@"; do
@@ -45,25 +39,28 @@ for param in "$@"; do
   fi
 done
 
-export DASH_IMAGE_TAG=${DASH_IMAGE_TAG:-"v5.2.1"}
-export GW_IMAGE_TAG=${GW_IMAGE_TAG:-"v5.2.1"}
-export IMAGE_REPO=${IMAGE_REPO:-"tykio"}
-if [ "$USE_TOXIPROXY" = "true" ]; then
-  log "Deploying with Toxiproxy enabled"
-  export REDIS_URL="toxiproxy.tyk.svc:6379"
-  export MONGO_URL="mongodb://toxiproxy.tyk.svc:27017/tyk_analytics"
-  export DASHBOARD_URL="http://toxiproxy.tyk.svc:3000"
-  export MDCB_CONNECTIONSTRING="toxiproxy.tyk.svc:9091"
-else
-  log "Deploying without Toxiproxy"
-  export REDIS_URL="redis.tyk.svc:6379"
-  export MONGO_URL="mongodb://mongo.tyk.svc:27017/tyk_analytics"
-  export DASHBOARD_URL="http://dashboard-svc-tyk-control-plane-tyk-dashboard.tyk.svc:3000"
-  export MDCB_CONNECTIONSTRING="mdcb-svc-tyk-control-plane-tyk-mdcb.tyk.svc:9091"
-fi
+export USE_TOXIPROXY
+export TYK_DB_LICENSEKEY
+export TYK_MDCB_LICENSEKEY
+
+######################################
+# functions
+######################################
+
+# read_version_field <version_file> <field_name> [default_value]
+# it reads version from version.yaml files for each topology to compute ports and other config
+read_version_field() {
+  local version_file="${1:?version file required}"
+  local field="${2:?field name required}"
+  local default="${3:-}"
+  local value
+  value=$(grep "^${field}:" "$version_file" 2> /dev/null | awk '{print $2}' || true)
+  echo "${value:-$default}"
+}
 
 deployNginx() {
   NGINX_SVC_TYPE=${NGINX_SVC_TYPE:-"NodePort"}
+  NGINX_NAMESPACE="ingress-nginx"
 
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   helm repo add tyk-helm https://helm.tyk.io/public/helm/charts/
@@ -72,7 +69,7 @@ deployNginx() {
   log "nginx svc type is $NGINX_SVC_TYPE"
 
   helm upgrade --install nginx ingress-nginx/ingress-nginx \
-    --namespace "$CP_NAMESPACE" \
+    --namespace "$NGINX_NAMESPACE" \
     --create-namespace \
     --set controller.service.type="$NGINX_SVC_TYPE" \
     --set controller.hostPort.enabled=true \
@@ -85,26 +82,28 @@ deployNginx() {
     --set 'controller.tolerations[1].operator=Equal' \
     --set 'controller.tolerations[1].effect=NoSchedule' \
     --wait \
-    --timeout="$NGINX_TIMEOUT"
+    --timeout="$NGINX_TIMEOUT" \
+    --hide-notes
   if [ $? -ne 0 ]; then
     return 1
   fi
 
-  kubectl wait --namespace "$CP_NAMESPACE" \
+  kubectl wait --namespace "$NGINX_NAMESPACE" \
     --for=condition=ready pod \
     --selector=app.kubernetes.io/component=controller \
     --timeout="$INGRESS_READY_TIMEOUT"
 }
 
 deployToxiProxy() {
+  kubectl create namespace toxiproxy --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f ../apps/toxiproxy.yaml
   log "Waiting for Toxiproxy deployment to be ready..."
-  kubectl wait --namespace "$CP_NAMESPACE" --for=condition=available --timeout="$TOXIPROXY_WAIT_TIMEOUT" deployment/toxiproxy || true
+  kubectl wait --namespace toxiproxy --for=condition=available --timeout="$TOXIPROXY_WAIT_TIMEOUT" deployment/toxiproxy || true
 
   log "Waiting for Toxiproxy LoadBalancer IP..."
   TOXIPROXY_IP=""
   for attempt in $(seq 1 30); do
-    TOXIPROXY_IP=$(kubectl get svc toxiproxy -n "$CP_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2> /dev/null || true)
+    TOXIPROXY_IP=$(kubectl get svc toxiproxy -n toxiproxy -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2> /dev/null || true)
     if [ -n "$TOXIPROXY_IP" ]; then
       break
     fi
@@ -121,24 +120,6 @@ deployToxiProxy() {
   log "Toxiproxy available at: $TOXIPROXY_URL"
 }
 
-deployControlPlaneRedis() {
-  log "----- Installing tyk-redis for control plane -----"
-  helm upgrade --install redis tyk-helm/simple-redis -n "$CP_NAMESPACE" --wait
-
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
-}
-
-deployMongo() {
-  log "----- Installing tyk-mongo -----"
-  helm upgrade --install mongo tyk-helm/simple-mongodb -n "$CP_NAMESPACE" --wait
-
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
-}
-
 # labelService <namespace> <service-name-pattern> <component>
 labelService() {
   local namespace="${1:?namespace required}"
@@ -148,29 +129,125 @@ labelService() {
   local svc_name
   svc_name=$(kubectl get svc -n "$namespace" -o name 2> /dev/null | grep "$pattern" | head -1)
   if [ -n "$svc_name" ]; then
-    kubectl label "$svc_name" -n "$namespace" tyk.io/component="$component" --overwrite
-    log "Labeled $svc_name with tyk.io/component=$component"
+    kubectl label "$svc_name" -n "$namespace" tyk.io/component="$component" --overwrite > /dev/null
   fi
 }
 
 labelControlPlaneServices() {
-  log "Labeling control plane services for discovery..."
-  local namespace="$CP_NAMESPACE"
+  local namespace="${1:?namespace required}"
 
   labelService "$namespace" "dashboard-svc" "dashboard"
   labelService "$namespace" "gateway-svc" "gateway"
   labelService "$namespace" "mdcb-svc" "mdcb"
   labelService "$namespace" "pump-svc" "pump"
+  kubectl label svc/redis -n "$namespace" tyk.io/component=redis --overwrite > /dev/null 2>&1 || true
+  kubectl label svc/mongo -n "$namespace" tyk.io/component=mongo --overwrite > /dev/null 2>&1 || true
 }
 
 labelDataPlaneServices() {
   local dp_index="${1:?dp_index required}"
-  log "Labeling data plane $dp_index services for discovery..."
-  local namespace
-  namespace=$(dp_namespace "$dp_index")
+  local namespace="${2:?namespace required}"
 
   labelService "$namespace" "gateway-svc" "gateway"
-  kubectl label svc/redis -n "$namespace" tyk.io/component=redis --overwrite
+  kubectl label svc/redis -n "$namespace" tyk.io/component=redis --overwrite > /dev/null 2>&1 || true
+}
+
+# Port allocation formula:
+# ------------------------
+# Each version gets a 10000-port band based on versionIndex.
+#
+# CP ports: base_port + versionIndex * 10000
+# DP Redis: 7379 + versionIndex * 10000 + dp_index * 1000
+#
+# Example allocation:
+# v5-8   (VI=0): CP Redis=6379,  MDCB=9091,  DP1 Redis=8379,  DP2 Redis=9379
+# v5-11  (VI=1): CP Redis=16379, MDCB=19091, DP1 Redis=18379, DP2 Redis=19379
+# master (VI=2): CP Redis=26379, MDCB=29091, DP1 Redis=28379, DP2 Redis=29379
+#
+# Port bands ensure isolation between concurrent multi-version deployments.
+computePorts() {
+  for topo_dir in "$VERSIONS_DIR"/*/; do
+    [ -d "$topo_dir" ] || continue
+    local topo
+    topo=$(basename "$topo_dir")
+    local version_file="${topo_dir}version.yaml"
+    [ -f "$version_file" ] || continue
+
+    local VI
+    VI=$(read_version_field "$version_file" "versionIndex" "0")
+    if ! [[ "$VI" =~ ^[0-9]+$ ]]; then
+      error "Invalid versionIndex '$VI' in $version_file (must be a non-negative integer)"
+      return 1
+    fi
+    local BAND=$((VI * 10000))
+    local NUM_DPS
+    NUM_DPS=$(read_version_field "$version_file" "numDataPlanes" "2")
+
+    local ports_file="${topo_dir}.ports.yaml"
+    {
+      echo "redisCP:   $((6379 + BAND))"
+      echo "mdcb:      $((9091 + BAND))"
+      echo "mongo:     $((27017 + BAND))"
+      echo "dashboard: $((3000 + BAND))"
+      echo "gateway:   $((8080 + BAND))"
+      for i in $(seq 1 "$NUM_DPS"); do
+        echo "redisDp${i}: $((7379 + BAND + i * 1000))"
+      done
+    } > "$ports_file"
+
+    log "Computed ports for $topo (versionIndex=$VI) -> $ports_file"
+  done
+}
+
+# precreateToxiProxyProxies - Create proxies before services exist
+# Uses predictive DNS names from .ports.yaml files
+precreateToxiProxyProxies() {
+  if [ "$USE_TOXIPROXY" != "true" ]; then
+    return 0
+  fi
+
+  log "Pre-creating Toxiproxy proxies (predictive mode)"
+
+  local cli_path="$TYK_PRO_ROOT/k8s/apps/toxiproxy-agent/cli.py"
+  if [ ! -f "$cli_path" ]; then
+    error "toxiproxy-agent CLI not found at $cli_path"
+    return 1
+  fi
+
+  local requirements_path="$TYK_PRO_ROOT/k8s/apps/toxiproxy-agent/requirements.txt"
+  if [ -f "$requirements_path" ]; then
+    pip install -q -r "$requirements_path" 2> /dev/null || true
+  fi
+
+  for topo_dir in "$VERSIONS_DIR"/*/; do
+    [ -d "$topo_dir" ] || continue
+    local topo
+    topo=$(basename "$topo_dir")
+
+    local version_file="${topo_dir}version.yaml"
+    [ -f "$version_file" ] || continue
+
+    local ports_file="${topo_dir}.ports.yaml"
+    if [ ! -f "$ports_file" ]; then
+      error "Ports file not found: $ports_file (run computePorts first)"
+      return 1
+    fi
+
+    local num_dps
+    num_dps=$(read_version_field "$version_file" "numDataPlanes" "2")
+
+    log "Pre-creating proxies for $topo with $num_dps data planes"
+
+    python3 "$cli_path" configure \
+      --toxiproxy-url "$TOXIPROXY_URL" \
+      --ports-file "$ports_file" \
+      --topology "$topo" \
+      --num-data-planes "$num_dps" \
+      --toxiproxy-namespace "toxiproxy" \
+      --verbose
+  done
+
+  log "Toxiproxy proxies pre-created successfully"
 }
 
 populateToxiProxy() {
@@ -192,19 +269,25 @@ populateToxiProxy() {
     pip install -q -r "$requirements_path" 2> /dev/null || true
   fi
 
-  python3 "$cli_path" configure \
-    --toxiproxy-url "$toxiproxy_url" \
-    --namespace-pattern "${DP_NAMESPACE_PREFIX}-*" \
-    --control-namespace "$CP_NAMESPACE" \
-    --verbose \
-    --output-env github-actions > toxiproxy-ci.env
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
+  for topo_dir in "$VERSIONS_DIR"/*/; do
+    [ -d "$topo_dir" ] || continue
+    local topo
+    topo=$(basename "$topo_dir")
+
+    python3 "$cli_path" configure \
+      --toxiproxy-url "$toxiproxy_url" \
+      --namespace-pattern "tyk-${topo}-dp-*" \
+      --control-namespace "tyk-${topo}" \
+      --toxiproxy-namespace "toxiproxy" \
+      --verbose
+  done
 
   log "Toxiproxy configured successfully"
-  log "Environment variables saved to toxiproxy-ci.env"
 }
+
+######################################
+# main deployment flow
+######################################
 
 log "deploying nginx helm chart"
 deployNginx || {
@@ -213,163 +296,122 @@ deployNginx || {
 }
 log "successfully deployed nginx ingress controller"
 
-# note that infra needs to be deployed before deploying and populating toxiproxy
-# since toxiproxy works as a proxy for infra workloads.
-deployControlPlaneRedis || {
-  error "failed to deploy redis"
-  exit 1
-}
-
-deployMongo || {
-  error "failed to deploy mongo"
-  exit 1
-}
-
-kubectl label svc/redis -n "$CP_NAMESPACE" tyk.io/component=redis --overwrite > /dev/null 2>&1
-kubectl label svc/mongo -n "$CP_NAMESPACE" tyk.io/component=mongo --overwrite > /dev/null 2>&1
-
+# toxiproxy (before helmfile, since infra needs proxy before CP starts with toxiproxy URLs)
 if [ "$USE_TOXIPROXY" = "true" ]; then
-  log "deploying toxiproxy for resilience tests"
+  log "Deploying toxiproxy for resilience tests"
   deployToxiProxy || {
     error "failed to deploy toxiproxy"
     exit 1
   }
-  log "Configuring toxiproxy for control plane dependencies (redis, mongo)..."
-  populateToxiProxy "$TOXIPROXY_URL" || {
-    error "failed to populate toxiproxy"
+fi
+
+# ECR pre-steps: iterate versions and set up private registry access where needed
+for topo_dir in "$VERSIONS_DIR"/*/; do
+  [ -d "$topo_dir" ] || continue
+  topo=$(basename "$topo_dir")
+  version_file="${topo_dir}version.yaml"
+  [ -f "$version_file" ] || continue
+
+  IMAGE_REPO_TYPE=$(read_version_field "$version_file" "imageRepoType" "official")
+  if [[ "$IMAGE_REPO_TYPE" == "ecr" ]]; then
+    IMAGE_REPO=$(read_version_field "$version_file" "imageRepo" "tykio")
+    MDCB_IMAGE_TAG=$(read_version_field "$version_file" "mdcbTag" "v2.8.0")
+    MDCB_IMAGE_NAME="tyk-sink"
+    MDCB_VALIDATION_IMAGE_TAG="v10.0.0"
+    CP_NS="tyk-${topo}"
+
+    log "Setting up ECR access for version $topo in namespace $CP_NS"
+    kubectl create namespace "$CP_NS" 2> /dev/null || true
+
+    kubectl -n "$CP_NS" create secret docker-registry ecrcred \
+      --docker-server=754489498669.dkr.ecr.eu-central-1.amazonaws.com \
+      --docker-username=AWS \
+      --docker-password="$(aws ecr get-login-password --region eu-central-1)" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl -n "$CP_NS" patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}' || true
+
+    log "Pulling MDCB image for ECR version $topo"
+    docker pull "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG"
+    docker tag "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG" "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG"
+    kind load docker-image "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG" --name kind
+  fi
+done
+
+# pre-compute toxiproxy ports for each version before helmfile apply
+log "Pre-computing toxiproxy ports for all versions..."
+computePorts
+
+# pre-create toxiproxy proxies before helmfile apply (predictive mode)
+if [ "$USE_TOXIPROXY" = "true" ]; then
+  log "Pre-creating Toxiproxy proxies before deployment"
+  precreateToxiProxyProxies || {
+    error "failed to pre-create toxiproxy proxies"
     exit 1
   }
 fi
 
-log "----- Preparing to install tyk-control-plane and tyk-data-plane -----"
-
-if [[ $IMAGE_REPO == 754489498669.dkr.ecr* ]]; then
-  DASH_IMAGE_NAME="tyk-analytics"
-  GW_IMAGE_NAME="tyk-ee"
-  MDCB_IMAGE_NAME="tyk-sink"
-  MDCB_IMAGE_TAG=${MDCB_IMAGE_TAG:-"master"}
-  MDCB_VALIDATION_IMAGE_TAG="v10.0.0" # a valid semver to pass version validation
-  log "Creating ecrcred secret to access ECR repository $IMAGE_REPO"
-  kubectl -n "$CP_NAMESPACE" create secret docker-registry ecrcred \
-    --docker-server=754489498669.dkr.ecr.eu-central-1.amazonaws.com \
-    --docker-username=AWS \
-    --docker-password="$(aws ecr get-login-password --region eu-central-1)"
-  # make the default SA use it
-  kubectl -n "$CP_NAMESPACE" patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}'
-  log "Pulling MDCB image"
-  # due to version validation in MDCB chart we need to have the image locally available
-  # Pull the master image but tag it with a valid semantic version to pass validation
-  docker pull "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG"
-  docker tag "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG" "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG"
-  kind load docker-image "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG" --name kind
-else
-  log "Using official docker repo"
-  GW_IMAGE_NAME="tyk-gateway"
-  DASH_IMAGE_NAME="tyk-dashboard"
-  MDCB_IMAGE_NAME="tyk-mdcb-docker"
-  MDCB_VALIDATION_IMAGE_TAG=${MDCB_IMAGE_TAG:-"v2.8.0"}
+# deploy all versions via helmfile
+log "Deploying all versions via Helmfile..."
+HELMFILE_ARGS=()
+if [ "$USE_TOXIPROXY" = "true" ]; then
+  HELMFILE_ARGS+=(--state-values-set "useToxiproxy=true")
 fi
 
-log "----- Installing tyk-control-plane -----"
-log "Using Repo: $IMAGE_REPO Gateway: $GW_IMAGE_TAG, Dashboard: $DASH_IMAGE_TAG"
+helmfile apply -q --suppress-diff --concurrency=0 "${HELMFILE_ARGS[@]+"${HELMFILE_ARGS[@]}"}"
+log "Helmfile apply completed"
 
-helm upgrade --install -n "$CP_NAMESPACE" tyk-control-plane tyk-helm/tyk-control-plane -f ./manifests/control-plane-values.yaml \
-  --set global.license.dashboard="$TYK_DB_LICENSEKEY" \
-  --set global.storageType="mongo" \
-  --set tyk-mdcb.mdcb.license="$TYK_MDCB_LICENSEKEY" \
-  --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-  --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
-  --set tyk-dashboard.dashboard.image.repository="$IMAGE_REPO/$DASH_IMAGE_NAME" \
-  --set tyk-dashboard.dashboard.image.tag="$DASH_IMAGE_TAG" \
-  --set tyk-mdcb.mdcb.image.repository="$IMAGE_REPO/$MDCB_IMAGE_NAME" \
-  --set tyk-mdcb.mdcb.image.tag="$MDCB_VALIDATION_IMAGE_TAG" \
-  --set global.redis.addrs[0]="$REDIS_URL" \
-  --set global.mongo.mongoURL="$MONGO_URL" \
-  --set global.components.pump="$ENABLE_PUMP" \
-  --set tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString="$DASHBOARD_URL" \
-  --wait \
-  --atomic
-if [ $? -ne 0 ]; then
-  error "Failed to install tyk-control-plane"
-  exit 1
-fi
+# label services and namespaces for toxiproxy/resilience test discovery (per version)
+for topo_dir in "$VERSIONS_DIR"/*/; do
+  [ -d "$topo_dir" ] || continue
+  topo=$(basename "$topo_dir")
+  version_file="${topo_dir}version.yaml"
+  [ -f "$version_file" ] || continue
 
-labelControlPlaneServices
+  NUM_DPS=$(read_version_field "$version_file" "numDataPlanes" "2")
+  VI=$(read_version_field "$version_file" "versionIndex" "0")
+  BAND=$((VI * 10000))
+  CP_NS="tyk-${topo}"
 
-export ORG_ID=$(kubectl get secret --namespace "$CP_NAMESPACE" tyk-operator-conf -o jsonpath="{.data.TYK_ORG}" | base64 --decode)
-export USER_API_KEY=$(kubectl get secret --namespace "$CP_NAMESPACE" tyk-operator-conf -o jsonpath="{.data.TYK_AUTH}" | base64 --decode)
+  labelControlPlaneServices "$CP_NS"
 
-log "----- Creating secret for data plane in tyk namespace -----"
+  kubectl label namespace "$CP_NS" \
+    tyk.io/role=control-plane \
+    tyk.io/version="$topo" \
+    tyk.io/version-index="$VI" \
+    tyk.io/toxiproxy-port-redis="$((6379 + BAND))" \
+    tyk.io/toxiproxy-port-mdcb="$((9091 + BAND))" \
+    tyk.io/toxiproxy-port-mongo="$((27017 + BAND))" \
+    tyk.io/toxiproxy-port-dashboard="$((3000 + BAND))" \
+    tyk.io/toxiproxy-port-gateway="$((8080 + BAND))" \
+    --overwrite > /dev/null
 
-# Install data planes in a loop
-for i in $(seq 1 "$NUM_DATA_PLANES"); do
-  # Set the appropriate Redis URL for this data plane
-  # port scheme: dp-1 -> 8379, dp-2 -> 9379, dp-3 -> 10379, etc. (7379 + i*1000)
-  if [ "$USE_TOXIPROXY" = "true" ]; then
-    DP_REDIS_PORT=$((7379 + i * 1000))
-    DP_REDIS_URL="toxiproxy.tyk.svc:${DP_REDIS_PORT}"
-  else
-    DP_REDIS_URL="redis.$(dp_namespace "$i").svc:6379"
-  fi
+  for i in $(seq 1 "$NUM_DPS"); do
+    DP_NS="tyk-${topo}-dp-${i}"
+    DP_REDIS_PORT=$((7379 + BAND + i * 1000))
 
-  log "----- Installing tyk-data-plane in $(dp_namespace "$i") namespace -----"
-  log "----- Using Redis URL: ${DP_REDIS_URL} -----"
+    labelDataPlaneServices "$i" "$DP_NS"
 
-  kubectl create namespace "$(dp_namespace "$i")" || true
-
-  kubectl -n "$(dp_namespace "$i")" create secret generic tyk-data-plane-secret \
-    --from-literal=orgId="$ORG_ID" \
-    --from-literal=userApiKey="$USER_API_KEY" \
-    --from-literal=groupID="data-plane-${i}" \
-    --from-literal=APISecret="352d20ee67be67f6340b4c0605b044b7" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  helm upgrade --install redis tyk-helm/simple-redis -n "$(dp_namespace $i)" --wait
-  kubectl label svc/redis -n "$(dp_namespace "$i")" tyk.io/component=redis --overwrite > /dev/null 2>&1
-  populateToxiProxy "${TOXIPROXY_URL:-}"
-
-  helm upgrade --install -n "$(dp_namespace "$i")" tyk-data-plane tyk-helm/tyk-data-plane -f ./manifests/data-plane-values.yaml \
-    --set tyk-gateway.gateway.replicaCount=${i} \
-    --set global.remoteControlPlane.useSecretName="tyk-data-plane-secret" \
-    --set global.secrets.useSecretName="tyk-data-plane-secret" \
-    --set tyk-gateway.gateway.image.repository="$IMAGE_REPO/$GW_IMAGE_NAME" \
-    --set tyk-gateway.gateway.image.tag="$GW_IMAGE_TAG" \
-    --set global.redis.addrs[0]="$DP_REDIS_URL" \
-    --set global.remoteControlPlane.connectionString="$MDCB_CONNECTIONSTRING" \
-    --set tyk-gateway.gateway.ingress.hosts[0].host="chart-gw-dp-${i}.test" \
-    --set tyk-gateway.gateway.ingress.className="nginx" --wait
-  labelDataPlaneServices "$i"
-  populateToxiProxy "${TOXIPROXY_URL:-}"
-
-  log "----- Successfully installed tyk-data-plane in $(dp_namespace "$i") -----"
+    kubectl label namespace "$DP_NS" \
+      tyk.io/role=data-plane \
+      tyk.io/version="$topo" \
+      tyk.io/dp-index="$i" \
+      tyk.io/toxiproxy-port-redis="$DP_REDIS_PORT" \
+      --overwrite > /dev/null
+  done
 done
 
-log "----- Creating $TOOLS_NAMESPACE namespace -----"
-kubectl create namespace "$TOOLS_NAMESPACE" || true
+# tools namespace
+log "Creating $TOOLS_NAMESPACE namespace"
+kubectl create namespace "$TOOLS_NAMESPACE" 2> /dev/null || true
 
-log "----- Installing httpbin app in $TOOLS_NAMESPACE namespace -----"
+log "Installing httpbin app in $TOOLS_NAMESPACE namespace"
 kubectl apply -f ../apps/httpbin.yaml
-if [ $? -ne 0 ]; then
-  error "Failed to install httpbin app in $TOOLS_NAMESPACE namespace"
-  exit 1
-fi
-log "httpbin app deployed successfully at httpbin.$TOOLS_NAMESPACE.svc:8080/get"
 
-log "----- Installing k6 load testing resources in $TOOLS_NAMESPACE namespace -----"
-# Create ConfigMap from the external script file
-kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js -n "$TOOLS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-if [ $? -ne 0 ]; then
-  error "Failed to create k6 test script ConfigMap"
-  exit 1
-fi
-
-# Apply the k6 deployment
+log "Installing k6 load testing resources in $TOOLS_NAMESPACE namespace"
+kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js \
+  -n "$TOOLS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f ../apps/k6.yaml
-if [ $? -ne 0 ]; then
-  error "Failed to install k6 load testing resources"
-  exit 1
-fi
-log "----- Successfully installed k6 load testing resources -----"
-log "To run a test, use the run-k6-test-custom task with parameters"
+log "Successfully installed k6 load testing resources"
 
 log "--> $0 Done"

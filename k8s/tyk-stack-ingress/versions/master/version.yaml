@@ -1,0 +1,7 @@
+gwTag: v5.11.1
+dashTag: v5.11.1
+mdcbTag: v2.8.8
+numDataPlanes: 2
+imageRepo: tykio
+imageRepoType: official
+versionIndex: 2

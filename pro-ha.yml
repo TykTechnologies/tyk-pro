@@ -29,6 +29,7 @@ services:
       - ${env_file}
     environment:
       - TYK_DB_LICENSEKEY=${TYK_DB_LICENSEKEY}
+      - TYK_DB_EXPERIMENTAL_GOVERNANCE=true
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/

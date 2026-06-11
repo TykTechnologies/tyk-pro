@@ -1,0 +1,3 @@
+# Per-version overrides for data plane
+# These values override/extend manifests/data-plane-values.yaml
+extraEnvs: []

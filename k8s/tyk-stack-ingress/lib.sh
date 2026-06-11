@@ -8,13 +8,13 @@ ORANGE='\033[0;33m'
 NC='\033[0m'
 
 log() {
-  echo -e "${GREEN}[INFO]${NC} $@"
+  echo -e "${GREEN}[INFO]${NC} $*"
 }
 
 warning() {
-  echo -e "${ORANGE}[WARNING]${NC} $@"
+  echo -e "${ORANGE}[WARNING]${NC} $*"
 }
 
 error() {
-  echo -e "${RED}[ERROR]${NC} $@"
+  echo -e "${RED}[ERROR]${NC} $*"
 }
