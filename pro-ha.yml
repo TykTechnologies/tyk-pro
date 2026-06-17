@@ -9,6 +9,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     environment:
       - TYK_GW_OPENTELEMETRY_ENABLED=true
     ports:
@@ -84,6 +85,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8181:8181"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-1.conf"]
@@ -102,6 +104,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8182:8182"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-1.conf"]
@@ -120,6 +123,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8281:8281"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-2.conf"]
@@ -138,6 +142,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8282:8282"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-2.conf"]
@@ -157,6 +162,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8381:8381"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
@@ -176,6 +182,7 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "8382:8382"
     entrypoint: ["/opt/tyk-gateway/tyk", "--conf", "/conf/tyk-datacenter-3.conf"]
