@@ -3,7 +3,7 @@ services:
   redis:
     profiles: ["all", "master-datacenter"]
     container_name: redis
-    image: redis:8.2.0
+    image: redis:8.0.0
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
@@ -18,7 +18,7 @@ services:
   redis-datacenter-1:
     profiles: ["all", "slave-datacenter"]
     container_name: redis-datacenter-1
-    image: redis:8.2.0
+    image: redis:8.0.0
     environment:
       - ALLOW_EMPTY_PASSWORD=yes    
     ports:
@@ -33,7 +33,7 @@ services:
   redis-datacenter-2:
     profiles: ["all", "slave-datacenter"]
     container_name: redis-datacenter-2
-    image: redis:8.2.0
+    image: redis:8.0.0
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
@@ -48,7 +48,7 @@ services:
   redis-datacenter-3:
     profiles: ["all", "slave-datacenter"]
     container_name: redis-datacenter-3
-    image: redis:8.2.0
+    image: redis:8.0.0
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
