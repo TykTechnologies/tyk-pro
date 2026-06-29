@@ -75,6 +75,10 @@ services:
       - ./confs/nginx.conf:/etc/nginx/nginx.conf
       - ./certs/nginx.crt:/etc/nginx/ssl/nginx.crt
       - ./certs/nginx.key:/etc/nginx/ssl/nginx.key
+    networks:
+      default:
+        aliases:
+          - wrong.host.badssl.com
     depends_on:
       - upstream
 
