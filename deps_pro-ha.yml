@@ -43,6 +43,8 @@ services:
     profiles: ["all", "master-datacenter"]
     container_name: httpbin.org
     image: mccutchen/go-httpbin
+    user: "root"
+    command: ["-port", "80"]
     restart: always
 
   restcountries:
@@ -191,5 +193,7 @@ services:
     profiles: ["all", "master-datacenter"]
     container_name: upstream-auth-server
     image: mccutchen/go-httpbin
+    user: "root"
+    command: ["-port", "80"]
     ports:
-      - "8090:8080"
+      - "8090:80"
