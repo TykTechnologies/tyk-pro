@@ -192,4 +192,4 @@ services:
     container_name: upstream-auth-server
     image: mccutchen/go-httpbin
     ports:
-      - "8090:80"
+      - "8090:8080"
