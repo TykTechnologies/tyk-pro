@@ -43,6 +43,11 @@ services:
     ports:
       - "9002:9002"
 
+  upstream:
+    profiles: ["all", "master-datacenter"]
+    container_name: httpbin.org
+    image: kennethreitz/httpbin
+    restart: always
 
   restcountries:
     profiles: ["all", "master-datacenter"]
@@ -77,6 +82,8 @@ services:
       default:
         aliases:
           - wrong.host.badssl.com
+    depends_on:
+      - upstream
 
   kafka:
     image: apache/kafka:3.8.0
@@ -184,3 +191,9 @@ services:
     cap_add:
       - IPC_LOCK
 
+  upstream-auth-server:
+    profiles: ["all", "master-datacenter"]
+    container_name: upstream-auth-server
+    image: kennethreitz/httpbin
+    ports:
+      - "8090:80"
