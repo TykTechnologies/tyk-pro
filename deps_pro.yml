@@ -22,6 +22,10 @@ services:
     profiles: ["all", "master-datacenter"]
     container_name: openldap
     image: osixia/openldap:1.5.0
+    # osixia/openldap intermittently fails its first slapd start
+    # ("/container/run/startup/slapd failed with status 255"), leaving LDAP
+    # dead for the whole session and breaking TIB SSO api-tests. Retry it.
+    restart: on-failure
     ports:
       - "389:389"
       - "636:636"
