@@ -405,6 +405,8 @@ done
 log "Creating $TOOLS_NAMESPACE namespace"
 kubectl create namespace "$TOOLS_NAMESPACE" 2> /dev/null || true
 
+log "Installing httpbin app in $TOOLS_NAMESPACE namespace"
+kubectl apply -f ../apps/httpbin.yaml
 
 log "Installing k6 load testing resources in $TOOLS_NAMESPACE namespace"
 kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js \
