@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: tools
+  labels:
+    app: httpbin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      containers:
+      - name: httpbin
+        image: mccutchen/go-httpbin:2.18.3
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /get
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /get
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: tools
+spec:
+  selector:
+    app: httpbin
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
