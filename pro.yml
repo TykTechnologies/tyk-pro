@@ -8,6 +8,8 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - /tmp/tyk-test-data:/test-data
+      - /tmp/tyk-test-data:/test-data
     ports:
       - "6000:6000"
       - "8003:8003"
