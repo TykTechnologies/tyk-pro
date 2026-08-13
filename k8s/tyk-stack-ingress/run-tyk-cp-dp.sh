@@ -405,6 +405,13 @@ done
 log "Creating $TOOLS_NAMESPACE namespace"
 kubectl create namespace "$TOOLS_NAMESPACE" 2> /dev/null || true
 
+# httpbin is the upstream the api tests point at via TYK_TEST_UPSTREAM_URL
+# (http://httpbin.tools.svc.cluster.local:8080/). Without it the gateways answer
+# 500 "Upstream host lookup failed". TT-17949
+log "Installing httpbin app in $TOOLS_NAMESPACE namespace"
+kubectl apply -f ../apps/httpbin.yaml
+kubectl -n "$TOOLS_NAMESPACE" rollout status deployment/httpbin --timeout=120s
+log "Successfully installed httpbin"
 
 log "Installing k6 load testing resources in $TOOLS_NAMESPACE namespace"
 kubectl create configmap k6-test-script --from-file=test-script.js=../apps/test-script.js \
