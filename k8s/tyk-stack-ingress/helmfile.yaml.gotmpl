@@ -16,33 +16,42 @@ repositories:
 ---
 {{- $versionsDir := "./versions" }}
 {{- $versionEntries := readDirEntries $versionsDir }}
+{{- /*
+  TOPOLOGY limits this state to one versions/<name> directory; empty means all.
+  Skipping is required rather than cosmetic: run-tyk-cp-dp.sh only writes
+  .ports.yaml and .images.yaml for the topologies it selected, and the readFile
+  calls below run at template time, so an unselected topology would fail the
+  render on a missing file.
+*/}}
+{{- $selected := env "TOPOLOGY" | default "" }}
 
 releases:
   {{- range $entry := $versionEntries }}
   {{- if $entry.IsDir }}
   {{- $name := $entry.Name }}
+  {{- if or (eq $selected "") (eq $selected $name) }}
   {{- $versionPath := printf "%s/%s/version.yaml" $versionsDir $name }}
   {{- $versionContent := readFile $versionPath }}
   {{- $config := $versionContent | fromYaml }}
   {{- $cpNamespace := printf "tyk-%s" $name }}
-  {{- $gwTag := default "v5.8.9" (index $config "gwTag") }}
-  {{- $dashTag := default "v5.8.9" (index $config "dashTag") }}
-  {{- $mdcbTag := default "v2.8.0" (index $config "mdcbTag") }}
   {{- $numDP := default 2 (index $config "numDataPlanes") }}
-  {{- $imageRepo := default "tykio" (index $config "imageRepo") }}
-  {{- $imageRepoType := default "official" (index $config "imageRepoType") }}
   {{- $useToxiproxy := $.Values.useToxiproxy | default false }}
   {{- $portsPath := printf "%s/%s/.ports.yaml" $versionsDir $name }}
   {{- $ports := readFile $portsPath | fromYaml }}
 
-  {{- $gwImageName := "tyk-gateway" }}
-  {{- $dashImageName := "tyk-dashboard" }}
-  {{- $mdcbImageName := "tyk-mdcb-docker" }}
-  {{- if eq $imageRepoType "ecr" }}
-    {{- $gwImageName = "tyk-ee" }}
-    {{- $dashImageName = "tyk-analytics" }}
-    {{- $mdcbImageName = "tyk-sink" }}
-  {{- end }}
+  {{- /*
+    Images come from .images.yaml, which run-tyk-cp-dp.sh writes from version.yaml
+    plus any IMAGE_REPO / *_IMAGE_TAG overrides. Resolved there, not here, so the
+    script's ECR setup and this render cannot disagree about the registry.
+  */}}
+  {{- $imagesPath := printf "%s/%s/.images.yaml" $versionsDir $name }}
+  {{- $images := readFile $imagesPath | fromYaml }}
+  {{- $gwRepository := index $images "gwRepository" }}
+  {{- $gwTag := index $images "gwTag" }}
+  {{- $dashRepository := index $images "dashRepository" }}
+  {{- $dashTag := index $images "dashTag" }}
+  {{- $mdcbRepository := index $images "mdcbRepository" }}
+  {{- $mdcbTag := index $images "mdcbTag" }}
 
   - name: redis-{{ $name }}
     chart: tyk-helm/simple-redis
@@ -128,15 +137,15 @@ releases:
       - name: tyk-mdcb.mdcb.license
         value: {{ $.Values.tykMdcbLicense }}
       - name: tyk-gateway.gateway.image.repository
-        value: {{ $imageRepo }}/{{ $gwImageName }}
+        value: {{ $gwRepository }}
       - name: tyk-gateway.gateway.image.tag
         value: {{ $gwTag }}
       - name: tyk-dashboard.dashboard.image.repository
-        value: {{ $imageRepo }}/{{ $dashImageName }}
+        value: {{ $dashRepository }}
       - name: tyk-dashboard.dashboard.image.tag
         value: {{ $dashTag }}
       - name: tyk-mdcb.mdcb.image.repository
-        value: {{ $imageRepo }}/{{ $mdcbImageName }}
+        value: {{ $mdcbRepository }}
       - name: tyk-mdcb.mdcb.image.tag
         value: {{ $mdcbTag }}
         {{- if $useToxiproxy }}
@@ -239,7 +248,7 @@ releases:
       - name: global.secrets.useSecretName
         value: tyk-data-plane-secret
       - name: tyk-gateway.gateway.image.repository
-        value: {{ $imageRepo }}/{{ $gwImageName }}
+        value: {{ $gwRepository }}
       - name: tyk-gateway.gateway.image.tag
         value: {{ $gwTag }}
         {{- if $useToxiproxy }}
@@ -261,6 +270,7 @@ releases:
         value: {{ $dpNum }}
     wait: true
 
-  {{- end }}
-  {{- end }}
-  {{- end }}
+  {{- end }}{{/* range dpIndex */}}
+  {{- end }}{{/* if topology selected */}}
+  {{- end }}{{/* if entry.IsDir */}}
+  {{- end }}{{/* range versionEntries */}}

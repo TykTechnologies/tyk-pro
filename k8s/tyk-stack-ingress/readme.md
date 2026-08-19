@@ -17,16 +17,57 @@ Export licenses to environment variables (or save them in .env file or rename .e
   ```
 </details>
 
-### [optional] Choose Docker image
-You can choose Dashboard and Gateway Docker images you want to use in your env.
+### [optional] Choose which topology to deploy
+The stack is defined as a set of *topologies* under `versions/`, one directory per
+version line (`lts`, `stable`, `master`). Each gets its own namespaces
+(`tyk-<topology>`, `tyk-<topology>-dp-<n>`), ingress hosts and Toxiproxy port band.
 
-*If you want to use different tag* -> set proper value in *DASH_IMAGE_TAG* and *GW_IMAGE_TAG* env variables (or save it in .env file).
+By default every topology is deployed. Set *TOPOLOGY* to deploy just one:
+```
+TOPOLOGY=master ./run-tyk-cp-dp.sh
+```
+CI sets this, because a job that only talks to one control plane should not pay
+for the other two.
+
+### [optional] Choose Docker image
+You can choose Dashboard, Gateway and MDCB Docker images you want to use in your env.
+The defaults live in `versions/<topology>/version.yaml` (`gwTag`, `dashTag`,
+`mdcbTag`, `imageRepo`, `imageRepoType`); the env variables below override them.
+
+*If you want to use different tag* -> set *DASH_IMAGE_TAG* / *GW_IMAGE_TAG* /
+*MDCB_IMAGE_TAG* (or save them in .env file).
 
 *If you want to use private ECR repo* -> set *IMAGE_REPO* env variable (or save it in .env file). Warning: login to AWS needed! [Instruction on how to login](https://tyktech.atlassian.net/wiki/spaces/~554878896/pages/1881243669/How+to+deploy+a+local+Developer+Experience+environment+DX). This allows to use unofficial images like *master*, *pr-XXXX*, etc.
+An ECR host is recognised from its `*.dkr.ecr.*.amazonaws.com` form, so the image
+names are switched to their ECR equivalents (`tyk-ee`, `tyk-analytics`,
+`tyk-sink`) automatically. Set *IMAGE_REPO_TYPE* to `ecr` or `official`
+explicitly if you need to override that.
 Command to login to ECR
 ```
 aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 754489498669.dkr.ecr.eu-central-1.amazonaws.com
 ```
+
+**Overrides apply to one topology.** Because a single set of tags cannot describe
+several version lines, exporting any of them requires *TOPOLOGY* as well:
+```
+TOPOLOGY=master IMAGE_REPO_TYPE=ecr GW_IMAGE_TAG=release-5.8 DASH_IMAGE_TAG=release-5.8 ./run-tyk-cp-dp.sh
+```
+Without *TOPOLOGY* the script stops rather than stamping one version over every
+topology. Values that come from `.env` are treated as local defaults instead: they
+are applied when a single topology is selected, and skipped with a warning
+otherwise.
+
+MDCB versions independently of the gateway and dashboard - there is no
+`release-5.8` MDCB build - so it has its own *MDCB_IMAGE_REPO*,
+*MDCB_IMAGE_REPO_TYPE* and *MDCB_IMAGE_TAG*. Use them to hold MDCB on an official
+release while gateway and dashboard move:
+```
+MDCB_IMAGE_REPO_TYPE=official MDCB_IMAGE_TAG=v2.8.8
+```
+
+The resolved images are logged at the start of every run and written to
+`versions/<topology>/.images.yaml`, so you can always tell what was actually
+deployed rather than what was requested.
 
 ## Starting Control Plane and Data Planes
 1. Provide Licenses (as described above)

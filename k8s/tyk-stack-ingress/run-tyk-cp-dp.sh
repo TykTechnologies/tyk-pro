@@ -6,6 +6,18 @@ cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
 source lib.sh
 
+# Snapshot the overrides the caller exported before .env is sourced: .env assigns
+# them unconditionally and would otherwise clobber them. Exported values are also
+# treated more strictly than .env ones - see resolveImages.
+ENV_TOPOLOGY="${TOPOLOGY:-}"
+ENV_IMAGE_REPO="${IMAGE_REPO:-}"
+ENV_IMAGE_REPO_TYPE="${IMAGE_REPO_TYPE:-}"
+ENV_GW_IMAGE_TAG="${GW_IMAGE_TAG:-}"
+ENV_DASH_IMAGE_TAG="${DASH_IMAGE_TAG:-}"
+ENV_MDCB_IMAGE_REPO="${MDCB_IMAGE_REPO:-}"
+ENV_MDCB_IMAGE_REPO_TYPE="${MDCB_IMAGE_REPO_TYPE:-}"
+ENV_MDCB_IMAGE_TAG="${MDCB_IMAGE_TAG:-}"
+
 if [ -f .env ]; then
   source .env
 fi
@@ -31,6 +43,37 @@ INGRESS_READY_TIMEOUT="${INGRESS_READY_TIMEOUT:-90s}"
 TOOLS_NAMESPACE="tools"
 TYK_PRO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VERSIONS_DIR="${SCRIPT_DIR}/versions"
+ECR_REGISTRY="${ECR_REGISTRY:-754489498669.dkr.ecr.eu-central-1.amazonaws.com}"
+ECR_REGION="${ECR_REGION:-eu-central-1}"
+
+# Deploy only this versions/<name> topology; unset deploys all of them.
+TOPOLOGY="${ENV_TOPOLOGY:-${TOPOLOGY:-}}"
+
+# Override the gwTag/dashTag/mdcbTag/imageRepo fields of the selected topology's
+# version.yaml, so a caller can swap the images while the topology name - which
+# every namespace, DNS name and ingress host derives from - stays put.
+#
+# MDCB has its own trio because it versions independently: there is no
+# "release-5.8" MDCB build, so it usually holds still while gw/dash move.
+IMAGE_REPO="${ENV_IMAGE_REPO:-${IMAGE_REPO:-}}"
+IMAGE_REPO_TYPE="${ENV_IMAGE_REPO_TYPE:-${IMAGE_REPO_TYPE:-}}"
+GW_IMAGE_TAG="${ENV_GW_IMAGE_TAG:-${GW_IMAGE_TAG:-}}"
+DASH_IMAGE_TAG="${ENV_DASH_IMAGE_TAG:-${DASH_IMAGE_TAG:-}}"
+MDCB_IMAGE_REPO="${ENV_MDCB_IMAGE_REPO:-${MDCB_IMAGE_REPO:-}}"
+MDCB_IMAGE_REPO_TYPE="${ENV_MDCB_IMAGE_REPO_TYPE:-${MDCB_IMAGE_REPO_TYPE:-}}"
+MDCB_IMAGE_TAG="${ENV_MDCB_IMAGE_TAG:-${MDCB_IMAGE_TAG:-}}"
+
+# True when an override came from the caller rather than .env.
+OVERRIDES_EXPORTED="no"
+for _v in "$ENV_IMAGE_REPO" "$ENV_IMAGE_REPO_TYPE" "$ENV_GW_IMAGE_TAG" \
+  "$ENV_DASH_IMAGE_TAG" "$ENV_MDCB_IMAGE_REPO" "$ENV_MDCB_IMAGE_REPO_TYPE" \
+  "$ENV_MDCB_IMAGE_TAG"; do
+  if [ -n "$_v" ]; then
+    OVERRIDES_EXPORTED="yes"
+    break
+  fi
+done
+unset _v
 
 USE_TOXIPROXY="false"
 for param in "$@"; do
@@ -42,6 +85,8 @@ done
 export USE_TOXIPROXY
 export TYK_DB_LICENSEKEY
 export TYK_MDCB_LICENSEKEY
+# helmfile.yaml.gotmpl reads this to skip unselected topologies.
+export TOPOLOGY
 
 ######################################
 # functions
@@ -56,6 +101,164 @@ read_version_field() {
   local value
   value=$(grep "^${field}:" "$version_file" 2> /dev/null | awk '{print $2}' || true)
   echo "${value:-$default}"
+}
+
+# selectedTopologies - print the versions/<name> directories this run deploys.
+# Every per-topology loop goes through here so the selection stays consistent
+# across the ECR setup, port computation, helmfile apply and labelling.
+selectedTopologies() {
+  local found=0
+  local topo_dir topo
+  for topo_dir in "$VERSIONS_DIR"/*/; do
+    [ -d "$topo_dir" ] || continue
+    [ -f "${topo_dir}version.yaml" ] || continue
+    topo=$(basename "$topo_dir")
+    if [ -n "$TOPOLOGY" ] && [ "$topo" != "$TOPOLOGY" ]; then
+      continue
+    fi
+    echo "$topo_dir"
+    found=1
+  done
+  if [ "$found" -eq 0 ]; then
+    # stderr, so callers capturing stdout get directory names only
+    if [ -n "$TOPOLOGY" ]; then
+      error "TOPOLOGY='$TOPOLOGY' matches no directory under $VERSIONS_DIR" >&2
+    else
+      error "No topologies with a version.yaml found under $VERSIONS_DIR" >&2
+    fi
+    return 1
+  fi
+}
+
+# looks_like_ecr <repo> - true for an ECR registry host. Lets IMAGE_REPO alone
+# select the private registry, without also needing IMAGE_REPO_TYPE.
+looks_like_ecr() {
+  case "${1:-}" in
+    *.dkr.ecr.*.amazonaws.com*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# image_repo_for <repo_type> <repo> - the registry to pull from.
+image_repo_for() {
+  local repo_type="${1:?repo type required}"
+  local repo="${2:-}"
+  if [ -n "$repo" ]; then
+    echo "$repo"
+  elif [ "$repo_type" = "ecr" ]; then
+    echo "$ECR_REGISTRY"
+  else
+    echo "tykio"
+  fi
+}
+
+# image_name_for <component> <repo_type> - repository name within the registry.
+# ECR publishes these under different names than the public images.
+image_name_for() {
+  local component="${1:?component required}"
+  local repo_type="${2:?repo type required}"
+  case "$component" in
+    gw) [ "$repo_type" = "ecr" ] && echo "tyk-ee" || echo "tyk-gateway" ;;
+    dash) [ "$repo_type" = "ecr" ] && echo "tyk-analytics" || echo "tyk-dashboard" ;;
+    mdcb) [ "$repo_type" = "ecr" ] && echo "tyk-sink" || echo "tyk-mdcb-docker" ;;
+    *)
+      error "Unknown image component '$component'"
+      return 1
+      ;;
+  esac
+}
+
+# resolveImages - write versions/<topo>/.images.yaml for each selected topology,
+# from version.yaml plus any overrides. helmfile reads that file; keeping the
+# resolution here means the ECR setup below and the helm render agree. The
+# effective images are logged so a run always shows what it actually deployed.
+resolveImages() {
+  local overrides_set="" name
+  for name in IMAGE_REPO IMAGE_REPO_TYPE GW_IMAGE_TAG DASH_IMAGE_TAG \
+    MDCB_IMAGE_REPO MDCB_IMAGE_REPO_TYPE MDCB_IMAGE_TAG; do
+    if [ -n "${!name}" ]; then
+      overrides_set="${overrides_set:+$overrides_set }$name"
+    fi
+  done
+
+  # Capture once, so a bad TOPOLOGY fails here rather than in the later
+  # process-substitution loops, whose exit status is invisible.
+  local topos topo_count
+  topos=$(selectedTopologies) || return 1
+  topo_count=$(printf '%s\n' "$topos" | grep -c . || true)
+
+  # One set of tags cannot describe several topologies - it would stamp e.g. a
+  # master build over lts. Exported overrides are a mistake worth stopping for;
+  # .env ones are a local default, so drop them and use each version.yaml.
+  if [ -n "$overrides_set" ] && [ -z "$TOPOLOGY" ] && [ "$topo_count" -gt 1 ]; then
+    if [ "$OVERRIDES_EXPORTED" = "yes" ]; then
+      error "Image overrides ($overrides_set) are set but TOPOLOGY is not, and $topo_count topologies are selected."
+      error "Set TOPOLOGY=<name> to say which topology the overrides apply to."
+      return 1
+    fi
+    warning "Ignoring image overrides from .env ($overrides_set): $topo_count topologies are selected and .env cannot say which one it meant."
+    warning "Set TOPOLOGY=<name> to apply them to a single topology."
+    IMAGE_REPO=""
+    IMAGE_REPO_TYPE=""
+    GW_IMAGE_TAG=""
+    DASH_IMAGE_TAG=""
+    MDCB_IMAGE_REPO=""
+    MDCB_IMAGE_REPO_TYPE=""
+    MDCB_IMAGE_TAG=""
+  fi
+
+  local topo_dir topo version_file
+  while read -r topo_dir; do
+    [ -n "$topo_dir" ] || continue
+    topo=$(basename "$topo_dir")
+    version_file="${topo_dir}version.yaml"
+
+    local base_repo_type base_repo
+    base_repo_type="${IMAGE_REPO_TYPE:-$(read_version_field "$version_file" "imageRepoType" "official")}"
+    base_repo="${IMAGE_REPO:-$(read_version_field "$version_file" "imageRepo" "")}"
+    if [ -z "$IMAGE_REPO_TYPE" ] && looks_like_ecr "$base_repo"; then
+      base_repo_type="ecr"
+    fi
+
+    local mdcb_repo_type mdcb_repo
+    mdcb_repo_type="${MDCB_IMAGE_REPO_TYPE:-$base_repo_type}"
+    mdcb_repo="${MDCB_IMAGE_REPO:-}"
+    if [ -z "$MDCB_IMAGE_REPO_TYPE" ] && looks_like_ecr "$mdcb_repo"; then
+      mdcb_repo_type="ecr"
+    fi
+    # Inherit the shared repo only while the types match, or an ECR host would
+    # be paired with an official image name.
+    if [ -z "$mdcb_repo" ] && [ "$mdcb_repo_type" = "$base_repo_type" ]; then
+      mdcb_repo="$base_repo"
+    fi
+
+    local gw_tag dash_tag mdcb_tag
+    gw_tag="${GW_IMAGE_TAG:-$(read_version_field "$version_file" "gwTag" "v5.8.9")}"
+    dash_tag="${DASH_IMAGE_TAG:-$(read_version_field "$version_file" "dashTag" "v5.8.9")}"
+    mdcb_tag="${MDCB_IMAGE_TAG:-$(read_version_field "$version_file" "mdcbTag" "v2.8.0")}"
+
+    local gw_image dash_image mdcb_image
+    gw_image="$(image_repo_for "$base_repo_type" "$base_repo")/$(image_name_for gw "$base_repo_type")"
+    dash_image="$(image_repo_for "$base_repo_type" "$base_repo")/$(image_name_for dash "$base_repo_type")"
+    mdcb_image="$(image_repo_for "$mdcb_repo_type" "$mdcb_repo")/$(image_name_for mdcb "$mdcb_repo_type")"
+
+    local images_file="${topo_dir}.images.yaml"
+    {
+      echo "gwRepository:   $gw_image"
+      echo "gwTag:          $gw_tag"
+      echo "dashRepository: $dash_image"
+      echo "dashTag:        $dash_tag"
+      echo "mdcbRepository: $mdcb_image"
+      echo "mdcbTag:        $mdcb_tag"
+      echo "repoType:       $base_repo_type"
+      echo "mdcbRepoType:   $mdcb_repo_type"
+    } > "$images_file"
+
+    log "Resolved images for topology '$topo':"
+    log "    gateway   $gw_image:$gw_tag"
+    log "    dashboard $dash_image:$dash_tag"
+    log "    mdcb      $mdcb_image:$mdcb_tag"
+  done < <(printf '%s\n' "$topos")
 }
 
 deployNginx() {
@@ -166,12 +369,12 @@ labelDataPlaneServices() {
 #
 # Port bands ensure isolation between concurrent multi-version deployments.
 computePorts() {
-  for topo_dir in "$VERSIONS_DIR"/*/; do
-    [ -d "$topo_dir" ] || continue
+  local topo_dir
+  while read -r topo_dir; do
+    [ -n "$topo_dir" ] || continue
     local topo
     topo=$(basename "$topo_dir")
     local version_file="${topo_dir}version.yaml"
-    [ -f "$version_file" ] || continue
 
     local VI
     VI=$(read_version_field "$version_file" "versionIndex" "0")
@@ -196,7 +399,7 @@ computePorts() {
     } > "$ports_file"
 
     log "Computed ports for $topo (versionIndex=$VI) -> $ports_file"
-  done
+  done < <(selectedTopologies)
 }
 
 # precreateToxiProxyProxies - Create proxies before services exist
@@ -219,13 +422,13 @@ precreateToxiProxyProxies() {
     pip install -q -r "$requirements_path" 2> /dev/null || true
   fi
 
-  for topo_dir in "$VERSIONS_DIR"/*/; do
-    [ -d "$topo_dir" ] || continue
+  local topo_dir
+  while read -r topo_dir; do
+    [ -n "$topo_dir" ] || continue
     local topo
     topo=$(basename "$topo_dir")
 
     local version_file="${topo_dir}version.yaml"
-    [ -f "$version_file" ] || continue
 
     local ports_file="${topo_dir}.ports.yaml"
     if [ ! -f "$ports_file" ]; then
@@ -245,7 +448,7 @@ precreateToxiProxyProxies() {
       --num-data-planes "$num_dps" \
       --toxiproxy-namespace "toxiproxy" \
       --verbose
-  done
+  done < <(selectedTopologies)
 
   log "Toxiproxy proxies pre-created successfully"
 }
@@ -269,8 +472,9 @@ populateToxiProxy() {
     pip install -q -r "$requirements_path" 2> /dev/null || true
   fi
 
-  for topo_dir in "$VERSIONS_DIR"/*/; do
-    [ -d "$topo_dir" ] || continue
+  local topo_dir
+  while read -r topo_dir; do
+    [ -n "$topo_dir" ] || continue
     local topo
     topo=$(basename "$topo_dir")
 
@@ -280,7 +484,7 @@ populateToxiProxy() {
       --control-namespace "tyk-${topo}" \
       --toxiproxy-namespace "toxiproxy" \
       --verbose
-  done
+  done < <(selectedTopologies)
 
   log "Toxiproxy configured successfully"
 }
@@ -305,41 +509,55 @@ if [ "$USE_TOXIPROXY" = "true" ]; then
   }
 fi
 
-# ECR pre-steps: iterate versions and set up private registry access where needed
-for topo_dir in "$VERSIONS_DIR"/*/; do
-  [ -d "$topo_dir" ] || continue
+# before anything is deployed, so the ECR setup below and helmfile agree
+log "Resolving images for selected topologies..."
+resolveImages || {
+  error "failed to resolve images"
+  exit 1
+}
+
+# ECR pre-steps: private registry access for topologies that need it. The pull
+# secret is needed in the data plane namespaces too, since the DP gateways pull
+# the same private image; helmfile's postsync hook creates those namespaces too
+# late to patch, so create them here.
+while read -r topo_dir; do
+  [ -n "$topo_dir" ] || continue
   topo=$(basename "$topo_dir")
   version_file="${topo_dir}version.yaml"
-  [ -f "$version_file" ] || continue
+  images_file="${topo_dir}.images.yaml"
 
-  IMAGE_REPO_TYPE=$(read_version_field "$version_file" "imageRepoType" "official")
-  if [[ "$IMAGE_REPO_TYPE" == "ecr" ]]; then
-    IMAGE_REPO=$(read_version_field "$version_file" "imageRepo" "tykio")
-    MDCB_IMAGE_TAG=$(read_version_field "$version_file" "mdcbTag" "v2.8.0")
-    MDCB_IMAGE_NAME="tyk-sink"
-    MDCB_VALIDATION_IMAGE_TAG="v10.0.0"
-    CP_NS="tyk-${topo}"
+  repo_type=$(read_version_field "$images_file" "repoType" "official")
+  mdcb_repo_type=$(read_version_field "$images_file" "mdcbRepoType" "official")
+  if [[ "$repo_type" != "ecr" && "$mdcb_repo_type" != "ecr" ]]; then
+    continue
+  fi
 
-    log "Setting up ECR access for version $topo in namespace $CP_NS"
-    kubectl create namespace "$CP_NS" 2> /dev/null || true
+  num_dps=$(read_version_field "$version_file" "numDataPlanes" "2")
+  ecr_namespaces=("tyk-${topo}")
+  for i in $(seq 1 "$num_dps"); do
+    ecr_namespaces+=("tyk-${topo}-dp-${i}")
+  done
 
-    kubectl -n "$CP_NS" create secret docker-registry ecrcred \
-      --docker-server=754489498669.dkr.ecr.eu-central-1.amazonaws.com \
+  log "Setting up ECR access for topology $topo in: ${ecr_namespaces[*]}"
+  ecr_password="$(aws ecr get-login-password --region "$ECR_REGION")"
+  for ns in "${ecr_namespaces[@]}"; do
+    kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl -n "$ns" create secret docker-registry ecrcred \
+      --docker-server="$ECR_REGISTRY" \
       --docker-username=AWS \
-      --docker-password="$(aws ecr get-login-password --region eu-central-1)" \
+      --docker-password="$ecr_password" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-    kubectl -n "$CP_NS" patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}' || true
-
-    log "Pulling MDCB image for ECR version $topo"
-    docker pull "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG"
-    docker tag "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_IMAGE_TAG" "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG"
-    kind load docker-image "$IMAGE_REPO/$MDCB_IMAGE_NAME:$MDCB_VALIDATION_IMAGE_TAG" --name kind
-  fi
-done
+    # No Tyk chart here enables a dedicated ServiceAccount, so patching default
+    # covers every Tyk pod in the namespace.
+    kubectl -n "$ns" patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}' || true
+  done
+  unset ecr_password
+done < <(selectedTopologies)
 
 # pre-compute toxiproxy ports for each version before helmfile apply
-log "Pre-computing toxiproxy ports for all versions..."
+log "Pre-computing toxiproxy ports for selected topologies..."
 computePorts
 
 # pre-create toxiproxy proxies before helmfile apply (predictive mode)
@@ -351,22 +569,28 @@ if [ "$USE_TOXIPROXY" = "true" ]; then
   }
 fi
 
-# deploy all versions via helmfile
-log "Deploying all versions via Helmfile..."
+# deploy the selected versions via helmfile
+if [ -n "$TOPOLOGY" ]; then
+  log "Deploying topology '$TOPOLOGY' via Helmfile..."
+else
+  log "Deploying all versions via Helmfile..."
+fi
 HELMFILE_ARGS=()
 if [ "$USE_TOXIPROXY" = "true" ]; then
   HELMFILE_ARGS+=(--state-values-set "useToxiproxy=true")
+fi
+if [ -n "$TOPOLOGY" ]; then
+  HELMFILE_ARGS+=(-l "version=$TOPOLOGY")
 fi
 
 helmfile apply -q --suppress-diff --concurrency=0 "${HELMFILE_ARGS[@]+"${HELMFILE_ARGS[@]}"}"
 log "Helmfile apply completed"
 
 # label services and namespaces for toxiproxy/resilience test discovery (per version)
-for topo_dir in "$VERSIONS_DIR"/*/; do
-  [ -d "$topo_dir" ] || continue
+while read -r topo_dir; do
+  [ -n "$topo_dir" ] || continue
   topo=$(basename "$topo_dir")
   version_file="${topo_dir}version.yaml"
-  [ -f "$version_file" ] || continue
 
   NUM_DPS=$(read_version_field "$version_file" "numDataPlanes" "2")
   VI=$(read_version_field "$version_file" "versionIndex" "0")
@@ -399,7 +623,7 @@ for topo_dir in "$VERSIONS_DIR"/*/; do
       tyk.io/toxiproxy-port-redis="$DP_REDIS_PORT" \
       --overwrite > /dev/null
   done
-done
+done < <(selectedTopologies)
 
 # tools namespace
 log "Creating $TOOLS_NAMESPACE namespace"
