@@ -144,8 +144,10 @@ releases:
         value: toxiproxy.toxiproxy.svc:{{ index $ports "redisCP" }}
       - name: global.mongo.mongoURL
         value: mongodb://toxiproxy.toxiproxy.svc:{{ index $ports "mongo" }}/tyk_analytics
+        # Routed via toxiproxy so resilience tests can sever the gateway -> dashboard
+        # link and observe the "dashboard" component fail on the gateway's /hello.
       - name: tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString
-        value: http://dashboard-svc-tyk-control-plane-{{ $name }}-tyk-dashboard.{{ $cpNamespace }}.svc:3000
+        value: http://toxiproxy.toxiproxy.svc:{{ index $ports "dashboard" }}
         {{- else }}
       - name: global.redis.addrs[0]
         value: redis.{{ $cpNamespace }}.svc:6379
