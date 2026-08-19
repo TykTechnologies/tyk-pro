@@ -144,8 +144,10 @@ releases:
         value: toxiproxy.toxiproxy.svc:{{ index $ports "redisCP" }}
       - name: global.mongo.mongoURL
         value: mongodb://toxiproxy.toxiproxy.svc:{{ index $ports "mongo" }}/tyk_analytics
+        # Routed via toxiproxy so resilience tests can sever the gateway -> dashboard
+        # link and observe the "dashboard" component fail on the gateway's /hello.
       - name: tyk-gateway.gateway.useDashboardAppConfig.dashboardConnectionString
-        value: http://dashboard-svc-tyk-control-plane-{{ $name }}-tyk-dashboard.{{ $cpNamespace }}.svc:3000
+        value: http://toxiproxy.toxiproxy.svc:{{ index $ports "dashboard" }}
         {{- else }}
       - name: global.redis.addrs[0]
         value: redis.{{ $cpNamespace }}.svc:6379
@@ -218,6 +220,19 @@ releases:
     values:
       - ./manifests/data-plane-values.yaml
       - ./versions/{{ $name }}/dp-values.yaml
+      {{- if $useToxiproxy }}
+      # Gateway <= 5.11.x gathers its health checks under a bare wg.Wait(), so a
+      # blocked RPC login freezes the whole /hello snapshot -- a severed MDCB
+      # link keeps reporting the stale "rpc: pass" for minutes. Every gorpc call
+      # is bounded by SlaveOptions.CallTimeout (30s by default, x4 login
+      # attempts), so shorten it here to let resilience tests observe the
+      # failure. Inline values rather than `set:` so "5" stays a string.
+      - tyk-gateway:
+          gateway:
+            extraEnvs:
+              - name: TYK_GW_SLAVEOPTIONS_CALLTIMEOUT
+                value: "5"
+      {{- end }}
     set:
       - name: global.remoteControlPlane.useSecretName
         value: tyk-data-plane-secret
