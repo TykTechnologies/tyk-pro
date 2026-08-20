@@ -52,6 +52,11 @@ TYK_PRO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VERSIONS_DIR="${SCRIPT_DIR}/versions"
 ECR_REGISTRY="${ECR_REGISTRY:-754489498669.dkr.ecr.eu-central-1.amazonaws.com}"
 ECR_REGION="${ECR_REGION:-eu-central-1}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
+# Stand-in tag for MDCB builds whose real tag is not semver. The tyk-mdcb chart
+# runs mdcb.image.tag through semverCompare ">=2.6.0", so a branch tag fails the
+# render; the image is retagged to this and side-loaded into kind instead.
+MDCB_PLACEHOLDER_TAG="${MDCB_PLACEHOLDER_TAG:-v10.0.0}"
 
 # TOPOLOGY restricts the deployment to a single versions/<name> directory.
 # Unset (the default) deploys every topology, which is what local multi-version
@@ -150,6 +155,11 @@ selectedTopologies() {
     fi
     return 1
   fi
+}
+
+# is_semver <tag> - true for vX.Y.Z, optionally with prerelease/build metadata.
+is_semver() {
+  [[ "${1:-}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$ ]]
 }
 
 # looks_like_ecr <repo> - true for an ECR registry host.
@@ -276,6 +286,15 @@ resolveImages() {
     dash_image="$(image_repo_for "$base_repo_type" "$base_repo")/$(image_name_for dash "$base_repo_type")"
     mdcb_image="$(image_repo_for "$mdcb_repo_type" "$mdcb_repo")/$(image_name_for mdcb "$mdcb_repo_type")"
 
+    # The tyk-mdcb chart feeds mdcb.image.tag to semverCompare, so a branch tag
+    # like "master" fails the render. Keep the real tag for the side-load below
+    # and hand the chart a placeholder that compares as "recent".
+    local mdcb_source_tag=""
+    if ! is_semver "$mdcb_tag"; then
+      mdcb_source_tag="$mdcb_tag"
+      mdcb_tag="$MDCB_PLACEHOLDER_TAG"
+    fi
+
     local images_file="${topo_dir}.images.yaml"
     {
       echo "gwRepository:   $gw_image"
@@ -284,6 +303,7 @@ resolveImages() {
       echo "dashTag:        $dash_tag"
       echo "mdcbRepository: $mdcb_image"
       echo "mdcbTag:        $mdcb_tag"
+      echo "mdcbSourceTag:  $mdcb_source_tag"
       echo "repoType:       $base_repo_type"
       echo "mdcbRepoType:   $mdcb_repo_type"
     } > "$images_file"
@@ -291,7 +311,11 @@ resolveImages() {
     log "Resolved images for topology '$topo':"
     log "    gateway   $gw_image:$gw_tag"
     log "    dashboard $dash_image:$dash_tag"
-    log "    mdcb      $mdcb_image:$mdcb_tag"
+    if [ -n "$mdcb_source_tag" ]; then
+      log "    mdcb      $mdcb_image:$mdcb_source_tag (side-loaded as :$mdcb_tag, chart needs semver)"
+    else
+      log "    mdcb      $mdcb_image:$mdcb_tag"
+    fi
   done < <(printf '%s\n' "$topos")
 }
 
@@ -592,6 +616,33 @@ while read -r topo_dir; do
     kubectl -n "$ns" patch sa default -p '{"imagePullSecrets":[{"name":"ecrcred"}]}' || true
   done
   unset ecr_password
+done < <(selectedTopologies)
+
+# Side-load MDCB builds whose tag is not semver. The chart cannot be pointed at
+# a branch tag, so the image is pulled here, retagged to the placeholder the
+# chart was given, and loaded into kind. mdcb.image.pullPolicy is IfNotPresent,
+# so the node uses the loaded image and never tries to pull the placeholder.
+while read -r topo_dir; do
+  [ -n "$topo_dir" ] || continue
+  topo=$(basename "$topo_dir")
+  images_file="${topo_dir}.images.yaml"
+
+  mdcb_source_tag=$(read_version_field "$images_file" "mdcbSourceTag" "")
+  [ -n "$mdcb_source_tag" ] || continue
+
+  mdcb_repository=$(read_version_field "$images_file" "mdcbRepository" "")
+  mdcb_placeholder=$(read_version_field "$images_file" "mdcbTag" "")
+
+  log "Side-loading MDCB for $topo: ${mdcb_repository}:${mdcb_source_tag} -> :${mdcb_placeholder}"
+  docker pull "${mdcb_repository}:${mdcb_source_tag}" || {
+    error "could not pull ${mdcb_repository}:${mdcb_source_tag}"
+    exit 1
+  }
+  docker tag "${mdcb_repository}:${mdcb_source_tag}" "${mdcb_repository}:${mdcb_placeholder}"
+  kind load docker-image "${mdcb_repository}:${mdcb_placeholder}" --name "$KIND_CLUSTER_NAME" || {
+    error "could not load ${mdcb_repository}:${mdcb_placeholder} into kind cluster '$KIND_CLUSTER_NAME'"
+    exit 1
+  }
 done < <(selectedTopologies)
 
 # pre-compute toxiproxy ports for each version before helmfile apply
