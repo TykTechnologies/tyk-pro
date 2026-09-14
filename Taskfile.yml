@@ -18,7 +18,7 @@ tasks:
     desc: Deploys infrastructure locally using docker compose manifest
     env:
       FLAVOUR: '{{ or .FLAVOUR "pro" }}'
-      DB: '{{ or .DB "mongo44" }}'
+      DB: '{{ or .DB "mongo7" }}'
       CACHE: '{{ or .CACHE "redis6" }}'
       VARIATION: '{{or .VARIATION "murmur64" }}'
       confs_dir: "./{{ .FLAVOUR }}"
@@ -57,7 +57,7 @@ tasks:
     desc: Tears down all local infrastructure including networking
     env:
       FLAVOUR: '{{ or .FLAVOUR "pro" }}'
-      DB: '{{ or .DB "mongo44" }}'
+      DB: '{{ or .DB "mongo7" }}'
       CACHE: '{{ or .CACHE "redis6" }}'
       VARIATION: '{{or .VARIATION "murmur64" }}'
       confs_dir: "./{{ .FLAVOUR }}"

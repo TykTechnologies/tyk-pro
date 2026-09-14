@@ -107,19 +107,19 @@ task login
 ### `Create  yout first environment`
 Ensure no volumes are left created from older environments. You can do this using docker volume prune.
 ``` bash
-task local FLAVOUR=pro DB=mongo44 VARIATION=murmur64
+task local FLAVOUR=pro DB=mongo7 VARIATION=murmur64
 ```
 
 ### `Destroy your environment`
 It's essential to use the same parameters used for creation while deleting the environment.
 ``` bash
-task clean FLAVOUR=pro DB=mongo44 VARIATION=murmur64
+task clean FLAVOUR=pro DB=mongo7 VARIATION=murmur64
 ```
 
 ### Avilable combinations
 These are all the available combinations. The framework can be extended easily for advanced users. New guides will be released for this subject during the adoption phase.
 ``` bash
-DB = [mongo44, postgres15]
+DB = [mongo7, postgres17]
 VARIATION = [murmur64, sha256]
 FLAVOUR = [pro, pro-ha]
 ```
@@ -162,16 +162,16 @@ markers =
 ```
 
 ## Examples
-The following examples guide you on how to mix and match variations. The combinations deployed remotely on GitHub are `FLAVOUR=pro-ha` `DB=postgres15` and `FLAVOUR=pro-ha` `DB=mongo44` as of today. To reproduce the same tests locally, use examples **#3** and **#4** but keep in mind you need to create the environments accordingly.
+The following examples guide you on how to mix and match variations. The combinations deployed remotely on GitHub are `FLAVOUR=pro-ha` `DB=postgres15` and `FLAVOUR=pro-ha` `DB=mongo7` as of today. To reproduce the same tests locally, use examples **#3** and **#4** but keep in mind you need to create the environments accordingly.
 
 ``` bash
-# Example #1 for full test on FLAVOUR=pro DB=mongo44 (not very usual)
+# Example #1 for full test on FLAVOUR=pro DB=mongo7 (not very usual)
 $ pytest -c pytest_local.ini --ci -m "not local and not dind and not mdcb"
 
 # Example #2 for full test on FLAVOUR=pro DB=postgres15 (not very usual)
 $ pytest -c pytest_local.ini --ci -m "not local and not dind and not mdcb and not sql"
 
-# Example #3 for full test on FLAVOUR=pro-ha DB=mongo44 (LIVE ON-GITHUB)
+# Example #3 for full test on FLAVOUR=pro-ha DB=mongo7 (LIVE ON-GITHUB)
 $ export USER_API_SECRET=<COPY VALUE FROM BOOTSTRAP OUTPUT>
 $ pytest -c pytest_local.ini --ci -m "not local and not dind"
 
