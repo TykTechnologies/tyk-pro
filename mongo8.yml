@@ -4,7 +4,7 @@ services:
     container_name: mongo
     # Pinned, not `8.0-noble`: mongod 8.0.21+ refuses to start on Linux kernels
     # 6.19-7.0.13 (SERVER-121912), which is where the CI runner kernel now sits.
-    image: mongo:8.0.20-noble
+    image: mongo:8
     environment:
       # MongoDB 8's TCMalloc uses rseq for per-CPU caches and corrupts memory on
       # those kernels. The image ships rseq=0, which leaves rseq to TCMalloc;
