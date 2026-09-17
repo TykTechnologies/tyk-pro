@@ -1,0 +1,242 @@
+---
+version: "3"
+
+# Builds the IDP environment: a kind cluster carrying the operators
+# idp-controller depends on, the idp-controller release, and the catalogue of
+# ProductClass and TykDeployment resources users deploy from.
+#
+# Three scripts sit behind these tasks. deps.sh handles prerequisite tooling on
+# the workstation, setup.sh handles the cluster and the release, and
+# set-image.sh swaps the container image one deployed product runs. Keeping
+# them apart means no cluster task installs a tool as a side effect: `deps`
+# only reports, and `deps-install` is something you run deliberately.
+
+silent: true
+
+vars:
+  # Matches the default in setup.sh. The IDP stack gets its own cluster rather
+  # than sharing the `kind` one k8s/tyk-stack-ingress uses, because both
+  # install ingress-nginx and both would claim the `nginx` IngressClass.
+  KIND_CLUSTER_NAME: '{{.KIND_CLUSTER_NAME | default "tyk-idp"}}'
+  KUBE_CONTEXT: 'kind-{{.KIND_CLUSTER_NAME | default "tyk-idp"}}'
+  IDP_NAMESPACE: '{{.IDP_NAMESPACE | default "idp-system"}}'
+  IDP_RELEASE: '{{.IDP_RELEASE | default "idp-controller"}}'
+  # Resolves the idp-controller checkout the same way setup.sh does: an
+  # exported value first, then .env, then the sibling directory.
+  RESOLVE_ROOT: |
+    if [ -z "${IDP_CONTROLLER_ROOT:-}" ] && [ -f .env ]; then . ./.env; fi
+    IDP_CONTROLLER_ROOT="${IDP_CONTROLLER_ROOT:-$(cd ../.. && pwd)/../idp-controller}"
+    if [ ! -d "$IDP_CONTROLLER_ROOT" ]; then
+      echo "error: no idp-controller checkout at '$IDP_CONTROLLER_ROOT'"
+      echo "clone TykTechnologies/idp-controller and set IDP_CONTROLLER_ROOT to it"
+      exit 1
+    fi
+    IDP_CONTROLLER_ROOT="$(cd "$IDP_CONTROLLER_ROOT" && pwd)"
+
+tasks:
+  default:
+    desc: Lists the available tasks
+    cmds:
+      - task --list
+
+  deps:
+    desc: Reports the version of every prerequisite and exits non-zero if a required one is missing
+    cmds:
+      - ./deps.sh check
+
+  deps-install:
+    desc: Installs any missing required prerequisite through Homebrew (macOS)
+    cmds:
+      - ./deps.sh install
+
+  deps-install-optional:
+    desc: Installs go and ngrok, for running the controller from source and tunnelling Forge
+    cmds:
+      - ./deps.sh install-optional
+
+  up:
+    desc: Runs the whole path end to end using the released images (needs Docker Hub access)
+    cmds:
+      - task: deps
+      - task: install
+      - task: catalog
+      - task: status
+
+  up-local:
+    desc: Runs the whole path end to end using images built from the checkout
+    cmds:
+      - task: deps
+      - task: cluster
+      - task: install-local
+      - task: catalog
+      - task: status
+
+  cluster:
+    desc: Creates the kind cluster and its operators, without the idp-controller release
+    cmds:
+      - DEPLOY_CHART=false ./setup.sh
+
+  install:
+    desc: Creates the cluster if absent and deploys the idp-controller release (needs licenses)
+    cmds:
+      - ./setup.sh
+
+  images:
+    desc: Builds the controller and api-server images from the checkout and loads them into the cluster
+    cmds:
+      - |
+        {{.RESOLVE_ROOT}}
+
+        if ! command -v go > /dev/null 2>&1; then
+          echo "error: go is needed to build the images; run: task -d k8s/idp deps-install-optional"
+          exit 1
+        fi
+
+        # Single-arch on purpose: the image only ever runs on this kind
+        # cluster, so building the other architecture is wasted time.
+        arch="$(go env GOARCH)"
+        echo "==> building idp-controller:local and idp-server:local for linux/${arch}"
+        make -C "$IDP_CONTROLLER_ROOT" docker-build \
+          BINARY=controller IMG=idp-controller:local GOARCH="$arch" ARCHS="$arch"
+        make -C "$IDP_CONTROLLER_ROOT" docker-build \
+          BINARY=api-server IMG=idp-server:local GOARCH="$arch" ARCHS="$arch"
+
+        echo "==> loading them into kind cluster {{.KIND_CLUSTER_NAME}}"
+        kind load docker-image idp-controller:local idp-server:local \
+          --name {{.KIND_CLUSTER_NAME}}
+
+  install-local:
+    desc: Deploys the release from images built here, for when the released ones are not pullable
+    cmds:
+      - task: images
+      # tykio/idp-controller and tykio/idp-server are private on Docker Hub, so
+      # the released tags setup.sh defaults to need a login with access to
+      # them. These overrides point the same script at the images `images`
+      # just loaded, which needs no registry access at all.
+      - IDP_CONTROLLER_IMAGE=idp-controller IDP_SERVER_IMAGE=idp-server IDP_IMAGE_TAG=local ./setup.sh
+
+  catalog:
+    desc: Applies the dev ProductClass and TykDeployment resources users deploy from
+    cmds:
+      - |
+        {{.RESOLVE_ROOT}}
+
+        DEV_DIR="${IDP_CONTROLLER_ROOT}/gitops/environments/dev"
+        for dir in product-classes topologies; do
+          if [ ! -d "${DEV_DIR}/${dir}" ]; then
+            echo "error: ${DEV_DIR}/${dir} not found"
+            exit 1
+          fi
+        done
+
+        # ProductClass and TykDeployment are cluster-scoped, so no namespace
+        # applies. The api-server lists them straight from the cluster; without
+        # them it answers every catalogue request with an empty list.
+        echo "==> applying the dev catalogue from ${DEV_DIR}"
+        kubectl --context {{.KUBE_CONTEXT}} apply \
+          -f "${DEV_DIR}/product-classes/" \
+          -f "${DEV_DIR}/topologies/"
+
+  catalog-delete:
+    desc: Removes the dev ProductClass and TykDeployment resources
+    cmds:
+      - |
+        {{.RESOLVE_ROOT}}
+
+        DEV_DIR="${IDP_CONTROLLER_ROOT}/gitops/environments/dev"
+        kubectl --context {{.KUBE_CONTEXT}} delete --ignore-not-found \
+          -f "${DEV_DIR}/product-classes/" \
+          -f "${DEV_DIR}/topologies/"
+
+  status:
+    desc: Reports the state of the cluster, the release, and the catalogue
+    cmds:
+      - |
+        if ! kubectl config get-contexts {{.KUBE_CONTEXT}} > /dev/null 2>&1; then
+          echo "no kubeconfig context '{{.KUBE_CONTEXT}}'; run: task -d k8s/idp cluster"
+          exit 1
+        fi
+
+        echo "==> operators"
+        for ns in argocd cert-manager nginx; do
+          ready="$(kubectl --context {{.KUBE_CONTEXT}} get pods -n "$ns" --no-headers 2> /dev/null \
+            | grep -c ' Running ' || true)"
+          total="$(kubectl --context {{.KUBE_CONTEXT}} get pods -n "$ns" --no-headers 2> /dev/null \
+            | wc -l | tr -d ' ')"
+          printf '  %-14s %s/%s pods running\n' "$ns" "${ready:-0}" "$total"
+        done
+
+        echo
+        echo "==> idp-controller release"
+        # `kubectl get pods -n <missing>` prints "No resources found" rather
+        # than failing, so the namespace needs its own check.
+        if kubectl --context {{.KUBE_CONTEXT}} get ns {{.IDP_NAMESPACE}} > /dev/null 2>&1; then
+          kubectl --context {{.KUBE_CONTEXT}} get pods -n {{.IDP_NAMESPACE}}
+        else
+          echo "namespace {{.IDP_NAMESPACE}} does not exist; the helm release has not run"
+        fi
+
+        echo
+        echo "==> catalogue"
+        if kubectl --context {{.KUBE_CONTEXT}} get crd productclasses.platform.tyk.io > /dev/null 2>&1; then
+          echo "ProductClass:         $(kubectl --context {{.KUBE_CONTEXT}} get productclass --no-headers 2> /dev/null | wc -l | tr -d ' ')"
+          echo "TykDeployment:        $(kubectl --context {{.KUBE_CONTEXT}} get tykdeployment --no-headers 2> /dev/null | wc -l | tr -d ' ')"
+          echo "TykDeploymentInstance: $(kubectl --context {{.KUBE_CONTEXT}} get tykdeploymentinstance --no-headers 2> /dev/null | wc -l | tr -d ' ')"
+        else
+          echo "the platform.tyk.io CRDs are not installed; the helm release has not run"
+        fi
+
+  port-forward:
+    desc: Port-forwards the api-server to localhost:8080
+    cmds:
+      - |
+        svc="$(kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} get svc \
+          -l app.kubernetes.io/instance={{.IDP_RELEASE}} \
+          -o jsonpath='{.items[0].metadata.name}' 2> /dev/null || true)"
+
+        if [ -z "$svc" ]; then
+          echo "error: no api-server Service in {{.IDP_NAMESPACE}}; run: task -d k8s/idp install"
+          exit 1
+        fi
+
+        echo "api-server on http://localhost:8080 (ctrl-c to stop)"
+        kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} port-forward "svc/$svc" 8080:8080
+
+  set-image:
+    desc: Points a deployed product's chart at another image and waits for the workload to run it
+    cmds:
+      # PRODUCT_CLASS and KEY default to tyk-oss and tyk-gateway.gateway.image;
+      # export them to target another product or values path.
+      - ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+
+  show-values:
+    desc: Prints the merged Helm values each of an instance's ArgoCD Applications received
+    cmds:
+      - ./set-image.sh show {{.INSTANCE}}
+
+  clear-image:
+    desc: Removes an instance's image override, restoring the chart default
+    cmds:
+      - ./set-image.sh clear {{.INSTANCE}}
+
+  logs:
+    desc: Follows the controller logs
+    cmds:
+      - kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} logs -l app.kubernetes.io/component=controller -f --tail=100
+
+  delete:
+    desc: Deletes the kind cluster
+    cmds:
+      - |
+        if kind get clusters 2> /dev/null | grep -qx "{{.KIND_CLUSTER_NAME}}"; then
+          echo "==> deleting kind cluster '{{.KIND_CLUSTER_NAME}}'"
+          kind delete cluster --name {{.KIND_CLUSTER_NAME}}
+        else
+          echo "kind cluster '{{.KIND_CLUSTER_NAME}}' does not exist"
+        fi
+
+  recreate:
+    desc: Deletes the cluster and rebuilds it from locally built images
+    cmds:
+      - task: delete
+      - task: up-local

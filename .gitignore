@@ -3,3 +3,6 @@
 __pycache__*
 .ports.yaml
 .images.yaml
+
+# Local license keys for the k8s environments; see .env_template in each folder.
+k8s/*/.env
