@@ -5,11 +5,14 @@ version: "3"
 # idp-controller depends on, the idp-controller release, and the catalogue of
 # ProductClass and TykDeployment resources users deploy from.
 #
-# Three scripts sit behind these tasks. deps.sh handles prerequisite tooling on
-# the workstation, setup.sh handles the cluster and the release, and
-# set-image.sh swaps the container image one deployed product runs. Keeping
-# them apart means no cluster task installs a tool as a side effect: `deps`
-# asks before installing anything, and no cluster task asks at all.
+# Four scripts sit behind these tasks. deps.sh handles prerequisite tooling on
+# the workstation, setup.sh builds the cluster and the idp-controller release,
+# install.sh deploys one Tyk stack onto it, and set-image.sh swaps the
+# container image a deployed product runs.
+#
+# setup builds the platform and runs nothing on it. install is what turns a
+# blueprint into pods: ProductClass and TykDeployment store configuration,
+# and only a TykDeploymentInstance causes a namespace and workloads.
 
 silent: true
 
@@ -48,34 +51,44 @@ tasks:
       - ./deps.sh {{.CLI_ARGS}}
 
   setup:
-    desc: Builds the whole environment from images you build here - cluster, release, catalogue
+    desc: Builds the platform - cluster, operators, idp-controller release, catalogue
     cmds:
       - task: deps
       - task: operators
-      - task: install-local
+      - task: release
+      - task: catalog
       - task: status
 
-  setup-released:
-    desc: The same, from the released images (needs Docker Hub access to the tykio repositories)
+  install:
+    desc: Deploys a Tyk stack - picks a TykDeployment and creates an instance
+    # interactive: install.sh asks which stack to deploy, so Task must not
+    # capture its stdin.
+    interactive: true
     cmds:
-      - task: deps
-      - task: install
-      - task: status
+      - ./install.sh {{.CLI_ARGS}}
 
   operators:
     desc: Creates the kind cluster and its operators, without the idp-controller release
     cmds:
       - DEPLOY_CHART=false ./setup.sh
 
-  install:
-    desc: Deploys the release from the released images, then applies the catalogue (needs licenses)
+  release:
+    # A step of setup. Builds the images here by default, because
+    # tykio/idp-controller and tykio/idp-server are private on Docker Hub and
+    # the released tags setup.sh defaults to need a login with access to them.
+    # RELEASED=true takes the released images instead.
+    internal: true
     cmds:
-      - ./setup.sh
-      - task: catalog
+      - |
+        if [ "{{.RELEASED | default "false"}}" = "true" ]; then
+          exec ./setup.sh
+        fi
+      - task: images
+      - IDP_CONTROLLER_IMAGE=idp-controller IDP_SERVER_IMAGE=idp-server IDP_IMAGE_TAG=local ./setup.sh
 
   images:
-    # Only install-local calls this. Kept out of the listing because building
-    # images without deploying them is not a thing you want on its own.
+    # Only release calls this. Kept out of the listing because building images
+    # without deploying them is not a thing you want on its own.
     internal: true
     cmds:
       - |
@@ -99,21 +112,10 @@ tasks:
         kind load docker-image idp-controller:local idp-server:local \
           --name {{.KIND_CLUSTER_NAME}}
 
-  install-local:
-    desc: Deploys the release from images built here, then applies the catalogue
-    cmds:
-      - task: images
-      # tykio/idp-controller and tykio/idp-server are private on Docker Hub, so
-      # the released tags setup.sh defaults to need a login with access to
-      # them. These overrides point the same script at the images `images`
-      # just loaded, which needs no registry access at all.
-      - IDP_CONTROLLER_IMAGE=idp-controller IDP_SERVER_IMAGE=idp-server IDP_IMAGE_TAG=local ./setup.sh
-      - task: catalog
-
   catalog:
-    # A step of install and install-local rather than a task of its own: the
-    # resources it applies need the CRDs the helm release installs, so running
-    # it before the release fails.
+    # A step of setup rather than a task of its own: the resources it applies
+    # need the CRDs the helm release installs, so running it before the release
+    # fails.
     internal: true
     cmds:
       - |

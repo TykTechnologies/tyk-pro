@@ -9,8 +9,9 @@ Three files do the work:
 
 - `deps.sh` checks and installs the prerequisite tooling on your workstation.
 - `setup.sh` creates the cluster and deploys the idp-controller release.
+- `install.sh` deploys one Tyk stack onto that platform.
 - `set-image.sh` swaps the image a deployed product runs, and verifies it.
-- `Taskfile.yaml` wraps all three, and adds the catalogue and image-building
+- `Taskfile.yaml` wraps all four, and adds the catalogue and image-building
   steps.
 
 Nothing in `setup.sh` installs a tool, and no cluster task installs one as a
@@ -291,11 +292,9 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | Task | What it does |
 | --- | --- |
 | `deps` | Reports every prerequisite and offers to install what is missing |
-| `setup` | The whole environment, from images built here |
-| `setup-released` | The same, from the released images |
+| `setup` | Builds the platform: cluster, operators, release, catalogue |
+| `install` | Deploys a Tyk stack, asking which one |
 | `operators` | Cluster and operators only, no release |
-| `install` | Release from the released images, plus the catalogue |
-| `install-local` | Release from images built here, plus the catalogue |
 | `catalog-delete` | Removes the ProductClass and TykDeployment resources |
 | `status` | Reports each layer |
 | `port-forward` | Serves the api-server on `localhost:8080` |
