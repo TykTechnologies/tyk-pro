@@ -11,6 +11,7 @@ Three files do the work:
 - `setup.sh` creates the cluster and deploys the idp-controller release.
 - `install.sh` deploys one Tyk stack onto that platform.
 - `set-image.sh` swaps the image a deployed product runs, and verifies it.
+- `expose.sh` port-forwards a tenant service to a gateway on this machine.
 - `Taskfile.yaml` wraps all four, and adds the catalogue and image-building
   steps.
 
@@ -242,6 +243,97 @@ task -d k8s/idp show-values INSTANCE=oss-demo
 task -d k8s/idp clear-image INSTANCE=oss-demo
 ```
 
+## Connect a local gateway to a stack in the cluster
+
+A Tyk gateway running on your machine needs three connections to a stack
+deployed in the cluster. Two are outbound from the gateway, and `expose`
+covers those:
+
+```bash
+task -d k8s/idp expose -- analytics    # dashboard on localhost:3000
+task -d k8s/idp expose -- redis        # redis on localhost:6379
+```
+
+Each runs in the foreground until you stop it, so give them a terminal each.
+Pass an instance name as a second argument when more than one instance exists,
+and set `LOCAL_PORT` to listen somewhere else.
+
+Only the `tyk-stack` and `tyk-control-plane` topologies deploy a dashboard, so
+`expose analytics` against an OSS stack reports which services the namespace
+does hold.
+
+### Point the gateway at the forwards
+
+In your local `tyk.conf`:
+
+```json
+{
+  "db_app_conf_options": { "connection_string": "http://localhost:3000" },
+  "policies": { "policy_connection_string": "http://localhost:3000" },
+  "storage": { "host": "localhost", "port": 6379 }
+}
+```
+
+Redis is not optional. The dashboard signals reloads by publishing to the
+`tyk.cluster.notifications` channel, and the gateway picks them up by
+subscribing to the same Redis. Without it the gateway registers and polls
+normally but never reloads when you change an API, which reads as a broken
+dashboard rather than a missing connection.
+
+Both gateways then share that channel, so a reload reaches the in-cluster
+gateway as well as yours.
+
+### Let the dashboard reach your gateway
+
+The third connection runs the other way: the dashboard calls your gateway for
+key and certificate management, on `/tyk/keys/*` and `/tyk/certs/*`. It uses
+one static address from its own config, and never the address a gateway
+reports when it registers.
+
+Point `tyk_api_config` at your machine through the instance's values:
+
+```bash
+task -d k8s/idp set-image INSTANCE=<instance> ...
+```
+
+or edit `spec.values` directly:
+
+```yaml
+values:
+  - productClass: tyk-stack-minimal
+    values: |
+      tyk-dashboard:
+        dashboard:
+          extraEnvs:
+            - name: TYK_DB_TYKAPI_HOST
+              value: http://host.docker.internal
+            - name: TYK_DB_TYKAPI_PORT
+              value: "8080"
+```
+
+`host.docker.internal` is what reaches your machine from a pod under Docker
+Desktop and OrbStack. The kind bridge address does not, and neither works on a
+real cluster.
+
+Skip this part if you only want the gateway to serve traffic. Without it the
+gateway runs, polls APIs and reloads; only key and certificate management from
+the dashboard fails.
+
+### Matching secrets
+
+Two secrets must match, or the halves fail in ways that look like network
+problems:
+
+- Your gateway's `secret` must equal the dashboard's `tyk_api_config.Secret`.
+- Your gateway's `node_secret` must equal the dashboard's node secret.
+
+Read them from the tenant namespace rather than inventing values:
+
+```bash
+kubectl --context kind-tyk-idp -n <tenant-namespace> get secret tyk-stack \
+  -o jsonpath='{.data.APISecret}' | base64 -d
+```
+
 ## Run the controller and api-server directly
 
 For a faster loop than rebuilding an image, run both binaries on your host. They
@@ -302,6 +394,7 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `set-analytics` | The same for the dashboard |
 | `set-pump` | The same for Pump |
 | `set-image` | The same for any values path, the escape hatch behind the three above |
+| `expose` | Port-forwards a tenant service, `analytics` or `redis` |
 | `show-values` | Prints the merged Helm values each Application received |
 | `clear-image` | Removes the override, restoring the chart default |
 | `logs` | Follows the controller logs |

@@ -5,10 +5,11 @@ version: "3"
 # idp-controller depends on, the idp-controller release, and the catalogue of
 # ProductClass and TykDeployment resources users deploy from.
 #
-# Four scripts sit behind these tasks. deps.sh handles prerequisite tooling on
+# Five scripts sit behind these tasks. deps.sh handles prerequisite tooling on
 # the workstation, setup.sh builds the cluster and the idp-controller release,
-# install.sh deploys one Tyk stack onto it, and set-image.sh swaps the
-# container image a deployed product runs.
+# install.sh deploys one Tyk stack onto it, set-image.sh swaps the container
+# image a deployed product runs, and expose.sh port-forwards a tenant service
+# to a gateway running on this machine.
 #
 # setup builds the platform and runs nothing on it. install is what turns a
 # blueprint into pods: ProductClass and TykDeployment store configuration,
@@ -185,6 +186,11 @@ tasks:
         else
           echo "the platform.tyk.io CRDs are not installed; the helm release has not run"
         fi
+
+  expose:
+    desc: Port-forwards a tenant service so a local gateway can reach it (analytics or redis)
+    cmds:
+      - ./expose.sh {{.CLI_ARGS}}
 
   port-forward:
     desc: Port-forwards the api-server to localhost:8080
