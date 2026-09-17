@@ -73,7 +73,7 @@ cp k8s/idp/.env_template k8s/idp/.env
 per-run override still works.
 
 To build the cluster and its operators without licenses, run
-`task -d k8s/idp cluster`.
+`task -d k8s/idp operators`.
 
 ## Set up the environment
 
@@ -86,10 +86,11 @@ This path needs no Go toolchain, and it needs a Docker Hub login with access to
 `tykio/idp-controller` and `tykio/idp-server`, which are private:
 
 ```bash
-task -d k8s/idp up
+task -d k8s/idp setup-released
 ```
 
-That runs `deps`, `install`, `catalog`, and `status` in order. Without access to
+That runs `deps`, `install`, and `status` in order, and `install` applies the
+catalogue itself. Without access to
 those repositories the pods land in `ImagePullBackOff`, and the path in the
 next section is the one you want.
 
@@ -99,7 +100,7 @@ This path needs Go and an idp-controller checkout, and it needs no registry
 access at all:
 
 ```bash
-task -d k8s/idp up-local
+task -d k8s/idp setup
 ```
 
 That builds both images from the checkout, loads them into kind with
@@ -286,14 +287,12 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `deps` | Reports every prerequisite, non-zero when one is missing |
 | `deps-install` | Installs missing required tools through Homebrew |
 | `deps-install-optional` | Installs `go` and `ngrok` |
-| `cluster` | Creates the cluster and operators, no release |
-| `install` | Deploys the release from the released images |
-| `images` | Builds both images and loads them into kind |
-| `install-local` | Runs `images`, then deploys the release from them |
-| `catalog` | Applies the dev ProductClass and TykDeployment resources |
-| `catalog-delete` | Removes them |
-| `up` | `deps`, `install`, `catalog`, `status` |
-| `up-local` | `deps`, `cluster`, `install-local`, `catalog`, `status` |
+| `setup` | The whole environment, from images built here |
+| `setup-released` | The same, from the released images |
+| `operators` | Cluster and operators only, no release |
+| `install` | Release from the released images, plus the catalogue |
+| `install-local` | Release from images built here, plus the catalogue |
+| `catalog-delete` | Removes the ProductClass and TykDeployment resources |
 | `status` | Reports each layer |
 | `port-forward` | Serves the api-server on `localhost:8080` |
 | `set-gateway` | Points the gateway at another image and waits for the workload to run it |
@@ -304,7 +303,6 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `clear-image` | Removes the override, restoring the chart default |
 | `logs` | Follows the controller logs |
 | `delete` | Deletes the kind cluster |
-| `recreate` | `delete`, then `up-local` |
 
 ## Configuration
 
@@ -334,7 +332,7 @@ with `kubectl -n idp-system describe pod <name>`. To work around it without a
 Docker Hub login, run `task install-local`.
 
 **The catalogue is empty.** ProductClass and TykDeployment are cluster-scoped
-resources that nothing creates automatically. Run `task catalog`.
+resources that `install` and `install-local` apply. Re-run either one.
 
 **`kubectl` talks to the wrong cluster.** This stack keeps its own cluster,
 separate from the one `k8s/tyk-stack-ingress` uses, because both install

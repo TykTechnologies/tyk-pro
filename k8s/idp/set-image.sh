@@ -308,10 +308,7 @@ values = os.environ["VALUES"]
 
 kept = [e for e in current if e.get("productClass") != product]
 if values.strip():
-    # dedent the block indented for the heredoc that no longer wraps it
-    body = "\n".join(line[8:] if line.startswith(" " * 8) else line
-                      for line in values.splitlines())
-    kept.append({"productClass": product, "values": body + "\n"})
+    kept.append({"productClass": product, "values": values.rstrip("\n") + "\n"})
 
 print(json.dumps({"spec": {"values": kept}}))
 ')"
@@ -349,7 +346,7 @@ setImage() {
   loadImage "$image"
 
   local values
-  values="$(renderValues "$repo" "$tag" | sed 's/^/        /')"
+  values="$(renderValues "$repo" "$tag")"
 
   log "pointing $PRODUCT_CLASS at $image on instance $instance"
   log "  key $KEY"

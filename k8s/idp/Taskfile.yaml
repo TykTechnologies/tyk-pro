@@ -54,35 +54,36 @@ tasks:
     cmds:
       - ./deps.sh install-optional
 
-  up:
-    desc: Runs the whole path end to end using the released images (needs Docker Hub access)
+  setup:
+    desc: Builds the whole environment from images you build here - cluster, release, catalogue
+    cmds:
+      - task: deps
+      - task: operators
+      - task: install-local
+      - task: status
+
+  setup-released:
+    desc: The same, from the released images (needs Docker Hub access to the tykio repositories)
     cmds:
       - task: deps
       - task: install
-      - task: catalog
       - task: status
 
-  up-local:
-    desc: Runs the whole path end to end using images built from the checkout
-    cmds:
-      - task: deps
-      - task: cluster
-      - task: install-local
-      - task: catalog
-      - task: status
-
-  cluster:
+  operators:
     desc: Creates the kind cluster and its operators, without the idp-controller release
     cmds:
       - DEPLOY_CHART=false ./setup.sh
 
   install:
-    desc: Creates the cluster if absent and deploys the idp-controller release (needs licenses)
+    desc: Deploys the release from the released images, then applies the catalogue (needs licenses)
     cmds:
       - ./setup.sh
+      - task: catalog
 
   images:
-    desc: Builds the controller and api-server images from the checkout and loads them into the cluster
+    # Only install-local calls this. Kept out of the listing because building
+    # images without deploying them is not a thing you want on its own.
+    internal: true
     cmds:
       - |
         {{.RESOLVE_ROOT}}
@@ -106,7 +107,7 @@ tasks:
           --name {{.KIND_CLUSTER_NAME}}
 
   install-local:
-    desc: Deploys the release from images built here, for when the released ones are not pullable
+    desc: Deploys the release from images built here, then applies the catalogue
     cmds:
       - task: images
       # tykio/idp-controller and tykio/idp-server are private on Docker Hub, so
@@ -114,9 +115,13 @@ tasks:
       # them. These overrides point the same script at the images `images`
       # just loaded, which needs no registry access at all.
       - IDP_CONTROLLER_IMAGE=idp-controller IDP_SERVER_IMAGE=idp-server IDP_IMAGE_TAG=local ./setup.sh
+      - task: catalog
 
   catalog:
-    desc: Applies the dev ProductClass and TykDeployment resources users deploy from
+    # A step of install and install-local rather than a task of its own: the
+    # resources it applies need the CRDs the helm release installs, so running
+    # it before the release fails.
+    internal: true
     cmds:
       - |
         {{.RESOLVE_ROOT}}
@@ -153,7 +158,7 @@ tasks:
     cmds:
       - |
         if ! kubectl config get-contexts {{.KUBE_CONTEXT}} > /dev/null 2>&1; then
-          echo "no kubeconfig context '{{.KUBE_CONTEXT}}'; run: task -d k8s/idp cluster"
+          echo "no kubeconfig context '{{.KUBE_CONTEXT}}'; run: task -d k8s/idp operators"
           exit 1
         fi
 
@@ -250,8 +255,3 @@ tasks:
           echo "kind cluster '{{.KIND_CLUSTER_NAME}}' does not exist"
         fi
 
-  recreate:
-    desc: Deletes the cluster and rebuilds it from locally built images
-    cmds:
-      - task: delete
-      - task: up-local
