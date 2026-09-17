@@ -8,9 +8,12 @@
 # it and no cluster task installs a tool as a side effect.
 #
 # Usage:
-#   ./deps.sh check             report every prerequisite, non-zero if one is missing
-#   ./deps.sh install           install the missing required tools (macOS/Homebrew)
-#   ./deps.sh install-optional  install the tools for running the backend from source
+#   ./deps.sh          report every prerequisite, then offer to install what is missing
+#   ./deps.sh --yes    install anything missing without asking, for a non-interactive run
+#
+# Nothing installs without a yes. Answering no still reports what is missing and
+# exits non-zero when a required tool is absent, so a caller cannot carry on
+# into a build that cannot work.
 
 set -euo pipefail
 
@@ -42,8 +45,13 @@ versionOf() {
   esac
 }
 
+# Populated by checkTools so the caller can act on what is absent.
+MISSING_REQUIRED=()
+MISSING_OPTIONAL=()
+
 checkTools() {
-  local missing=()
+  MISSING_REQUIRED=()
+  MISSING_OPTIONAL=()
 
   log "required"
   for cmd in "${REQUIRED[@]}"; do
@@ -51,7 +59,7 @@ checkTools() {
       printf '  %-8s %s\n' "$cmd" "$(versionOf "$cmd")"
     else
       printf '  %-8s MISSING\n' "$cmd"
-      missing+=("$cmd")
+      MISSING_REQUIRED+=("$cmd")
     fi
   done
 
@@ -61,14 +69,33 @@ checkTools() {
       printf '  %-8s %s\n' "$cmd" "$(versionOf "$cmd")"
     else
       printf '  %-8s not installed\n' "$cmd"
+      MISSING_OPTIONAL+=("$cmd")
     fi
   done
+}
 
-  if [ ${#missing[@]} -gt 0 ]; then
-    error "missing required tools: ${missing[*]}"
-    error "to install them, run: task -d k8s/idp deps-install"
-    exit 1
+# Asks once, and treats anything but an explicit yes as no. A run with no
+# terminal attached, such as CI, never blocks: it answers no unless ASSUME_YES
+# was passed.
+confirm() {
+  local prompt="$1"
+
+  if [ "$ASSUME_YES" = "true" ]; then
+    log "$prompt yes (--yes)"
+    return 0
   fi
+
+  if [ ! -t 0 ]; then
+    warning "$prompt no terminal to ask on, skipping. Pass --yes to install anyway"
+    return 1
+  fi
+
+  local answer
+  read -r -p "$(printf '%s [y/N] ' "$prompt")" answer
+  case "$answer" in
+    [yY] | [yY][eE][sS]) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 checkDaemon() {
@@ -113,18 +140,12 @@ requireBrew() {
   fi
 }
 
+# Installs exactly the tools it is given, so an existing tool keeps whatever
+# version the machine already has and nobody is moved off a pinned version.
 installTools() {
-  requireBrew "${REQUIRED[*]}"
+  requireBrew "$*"
 
-  # Only ever installs what is absent. An existing tool keeps whatever version
-  # the machine already has, so this never moves anyone off a version they
-  # pinned on purpose.
-  for cmd in "${REQUIRED[@]}"; do
-    if command -v "$cmd" > /dev/null 2>&1; then
-      log "$cmd is already installed, leaving it alone"
-      continue
-    fi
-
+  for cmd in "$@"; do
     case "$cmd" in
       docker)
         log "installing OrbStack, which routes kind LoadBalancer IPs to macOS"
@@ -138,40 +159,42 @@ installTools() {
   done
 }
 
-installOptionalTools() {
-  requireBrew "${OPTIONAL[*]}"
-
-  for cmd in "${OPTIONAL[@]}"; do
-    if command -v "$cmd" > /dev/null 2>&1; then
-      log "$cmd is already installed, leaving it alone"
-      continue
-    fi
-    log "installing $cmd"
-    brew install "$cmd"
-  done
-}
-
 ######################################
 # entrypoint
 ######################################
-case "${1:-check}" in
-  check)
-    checkTools
-    checkDaemon
-    checkRuntime
-    ;;
-  install)
-    installTools
-    checkTools
-    checkDaemon
-    checkRuntime
-    ;;
-  install-optional)
-    installOptionalTools
-    ;;
+ASSUME_YES="false"
+case "${1:-}" in
+  "") ;;
+  --yes | -y) ASSUME_YES="true" ;;
   *)
-    error "unknown command '$1'"
-    error "usage: $0 [check|install|install-optional]"
+    error "unknown argument '$1'"
+    error "usage: $0 [--yes]"
     exit 1
     ;;
 esac
+
+checkTools
+
+if [ ${#MISSING_REQUIRED[@]} -gt 0 ]; then
+  if confirm "Install ${MISSING_REQUIRED[*]} through Homebrew?"; then
+    installTools "${MISSING_REQUIRED[@]}"
+    checkTools
+  fi
+
+  if [ ${#MISSING_REQUIRED[@]} -gt 0 ]; then
+    error "still missing: ${MISSING_REQUIRED[*]}"
+    exit 1
+  fi
+fi
+
+# Optional tools are offered separately, because declining them leaves a
+# working environment. go builds the controller images, ngrok exposes a local
+# api-server to a Forge tunnel.
+if [ ${#MISSING_OPTIONAL[@]} -gt 0 ]; then
+  if confirm "Also install ${MISSING_OPTIONAL[*]}?"; then
+    installTools "${MISSING_OPTIONAL[@]}"
+  fi
+fi
+
+checkDaemon
+checkRuntime

@@ -40,19 +40,12 @@ tasks:
       - task --list
 
   deps:
-    desc: Reports the version of every prerequisite and exits non-zero if a required one is missing
+    desc: Reports every prerequisite and offers to install what is missing
+    # interactive: the script asks before installing anything, so Task must not
+    # capture its stdin.
+    interactive: true
     cmds:
-      - ./deps.sh check
-
-  deps-install:
-    desc: Installs any missing required prerequisite through Homebrew (macOS)
-    cmds:
-      - ./deps.sh install
-
-  deps-install-optional:
-    desc: Installs go and ngrok, for running the controller from source and tunnelling Forge
-    cmds:
-      - ./deps.sh install-optional
+      - ./deps.sh {{.CLI_ARGS}}
 
   setup:
     desc: Builds the whole environment from images you build here - cluster, release, catalogue

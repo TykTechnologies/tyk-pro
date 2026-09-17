@@ -51,9 +51,15 @@ task -d k8s/idp deps
 ```
 
 That reports `docker`, `kind`, `kubectl`, and `helm`, warns when the Docker
-daemon is unreachable, and prints your Docker context. To install whatever is
-missing through Homebrew, run `task -d k8s/idp deps-install`. It skips anything
-already present, so it never moves you off a version you pinned.
+daemon is unreachable, and prints your Docker context. When something is
+missing, it asks before installing it through Homebrew, and installs only what
+is absent, so it never moves you off a version you pinned. Required and
+optional tools are asked about separately, because declining the optional ones
+still leaves a working environment.
+
+Nothing installs without a yes. Declining a required tool exits non-zero, so a
+build cannot carry on without it. For a non-interactive run, `task -d k8s/idp
+deps -- --yes` installs what is missing without asking.
 
 ### Licenses
 
@@ -284,9 +290,7 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 
 | Task | What it does |
 | --- | --- |
-| `deps` | Reports every prerequisite, non-zero when one is missing |
-| `deps-install` | Installs missing required tools through Homebrew |
-| `deps-install-optional` | Installs `go` and `ngrok` |
+| `deps` | Reports every prerequisite and offers to install what is missing |
 | `setup` | The whole environment, from images built here |
 | `setup-released` | The same, from the released images |
 | `operators` | Cluster and operators only, no release |
