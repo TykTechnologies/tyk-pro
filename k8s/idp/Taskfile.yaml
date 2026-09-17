@@ -9,7 +9,7 @@ version: "3"
 # the workstation, setup.sh handles the cluster and the release, and
 # set-image.sh swaps the container image one deployed product runs. Keeping
 # them apart means no cluster task installs a tool as a side effect: `deps`
-# only reports, and `deps-install` is something you run deliberately.
+# asks before installing anything, and no cluster task asks at all.
 
 silent: true
 
@@ -82,7 +82,7 @@ tasks:
         {{.RESOLVE_ROOT}}
 
         if ! command -v go > /dev/null 2>&1; then
-          echo "error: go is needed to build the images; run: task -d k8s/idp deps-install-optional"
+          echo "error: go is needed to build the images; run: task -d k8s/idp deps"
           exit 1
         fi
 

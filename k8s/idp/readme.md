@@ -14,7 +14,7 @@ Three files do the work:
   steps.
 
 Nothing in `setup.sh` installs a tool, and no cluster task installs one as a
-side effect. Run `task deps-install` yourself when something is missing.
+side effect. `deps` asks before installing anything.
 
 ## What you get
 
