@@ -202,8 +202,23 @@ tasks:
         echo "api-server on http://localhost:8080 (ctrl-c to stop)"
         kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} port-forward "svc/$svc" 8080:8080
 
+  set-gateway:
+    desc: Points the Tyk gateway at another image (PRODUCT_CLASS defaults to tyk-oss)
+    cmds:
+      - COMPONENT=gateway KEY=tyk-gateway.gateway.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+
+  set-analytics:
+    desc: Points the Tyk dashboard at another image (needs a PRODUCT_CLASS carrying one)
+    cmds:
+      - COMPONENT=dashboard KEY=tyk-dashboard.dashboard.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+
+  set-pump:
+    desc: Points Tyk Pump at another image (needs a PRODUCT_CLASS carrying one)
+    cmds:
+      - COMPONENT=pump KEY=tyk-pump.pump.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+
   set-image:
-    desc: Points a deployed product's chart at another image and waits for the workload to run it
+    desc: Points any values path at another image; the escape hatch behind the set-* tasks
     cmds:
       # PRODUCT_CLASS and KEY default to tyk-oss and tyk-gateway.gateway.image;
       # export them to target another product or values path.

@@ -203,14 +203,26 @@ override onto the instance's `spec.values`, and waits for a workload in the
 tenant namespace to report that image. A wrong key path applies cleanly and
 changes nothing, so this last check is the one that proves the override worked.
 
-Two variables retarget it:
+Three tasks cover the Tyk components, each setting the values path for you:
+
+| Task | Component | Values path |
+| --- | --- | --- |
+| `set-gateway` | Gateway | `tyk-gateway.gateway.image` |
+| `set-analytics` | Dashboard | `tyk-dashboard.dashboard.image` |
+| `set-pump` | Pump | `tyk-pump.pump.image` |
+
+`PRODUCT_CLASS` defaults to `tyk-oss`, so pass it for anything else:
 
 ```bash
-PRODUCT_CLASS=tyk-cp-minimal KEY=tyk-dashboard.dashboard.image \
-  task -d k8s/idp set-image INSTANCE=cp-demo IMAGE=my-dashboard:local
+task -d k8s/idp set-analytics INSTANCE=cp-demo PRODUCT_CLASS=tyk-cp-minimal IMAGE=my-dashboard:local
 ```
 
-`KEY` carries the subchart prefix. `tyk-oss` is an umbrella chart, so values
+Each task checks the ProductClass deploys that component before writing
+anything. Asking for a dashboard on `tyk-oss` fails with the components that
+chart does carry, rather than writing an override that renders nothing.
+
+`set-image` remains the escape hatch for any other values path, and its `KEY`
+carries the subchart prefix. `tyk-oss` is an umbrella chart, so values
 bound for its `tyk-gateway` subchart nest under that subchart's name, which is
 why the default reads `tyk-gateway.gateway.image`. Confirm a path against
 `helm show values <repo>/<chart> --version <version>` before trusting it.
@@ -284,7 +296,10 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `up-local` | `deps`, `cluster`, `install-local`, `catalog`, `status` |
 | `status` | Reports each layer |
 | `port-forward` | Serves the api-server on `localhost:8080` |
-| `set-image` | Points a product's chart at another image and waits for the workload to run it |
+| `set-gateway` | Points the gateway at another image and waits for the workload to run it |
+| `set-analytics` | The same for the dashboard |
+| `set-pump` | The same for Pump |
+| `set-image` | The same for any values path, the escape hatch behind the three above |
 | `show-values` | Prints the merged Helm values each Application received |
 | `clear-image` | Removes the override, restoring the chart default |
 | `logs` | Follows the controller logs |

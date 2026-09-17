@@ -17,6 +17,7 @@
 # Environment:
 #   PRODUCT_CLASS  ProductClass to target       (default tyk-oss)
 #   KEY            dotted values path to set    (default tyk-gateway.gateway.image)
+#   COMPONENT      component KEY addresses      (unset; set by the set-* tasks)
 #   ROLLOUT_TIMEOUT                             (default 180s)
 #
 # The default KEY carries the subchart prefix on purpose. tyk-oss is an umbrella
@@ -34,7 +35,7 @@ source "${SCRIPT_DIR}/../tyk-stack-ingress/lib.sh"
 ######################################
 # Same precedence as setup.sh: a caller-exported value beats .env, because an
 # export is a deliberate per-run choice while .env holds local defaults.
-CONFIG_VARS=(KIND_CLUSTER_NAME PRODUCT_CLASS KEY ROLLOUT_TIMEOUT)
+CONFIG_VARS=(KIND_CLUSTER_NAME PRODUCT_CLASS KEY COMPONENT ROLLOUT_TIMEOUT)
 
 for var in "${CONFIG_VARS[@]}"; do
   declare "EXPORTED_${var}=${!var-}"
@@ -55,6 +56,7 @@ KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-tyk-idp}"
 KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 PRODUCT_CLASS="${PRODUCT_CLASS:-tyk-oss}"
 KEY="${KEY:-tyk-gateway.gateway.image}"
+COMPONENT="${COMPONENT:-}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-180s}"
 
 INSTANCE_LABEL="platform.tyk.io/deployment-instance"
@@ -92,6 +94,56 @@ requireProductInTopology() {
     error "set PRODUCT_CLASS to one of them"
     exit 1
   fi
+}
+
+# Components each Tyk umbrella chart carries, copied from the dependency lists
+# in the tyk-charts Chart.yaml files. A component that moves between umbrellas
+# makes this stale, but the failure is a wrong rejection rather than a bad
+# deploy. An unlisted chart returns nothing and is skipped by requireComponent.
+componentsOf() {
+  case "$1" in
+    tyk-oss) echo "gateway pump" ;;
+    tyk-stack) echo "gateway pump dashboard" ;;
+    tyk-control-plane) echo "gateway pump dashboard" ;;
+    tyk-data-plane) echo "gateway pump" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Fails when the ProductClass deploys no chart carrying the component KEY
+# addresses. Without it, asking for a dashboard on a gateway-only chart writes
+# an override that renders nothing and reports no error.
+requireComponent() {
+  [ -n "$COMPONENT" ] || return 0
+
+  local chart_names
+  chart_names="$(kc get productclass "$PRODUCT_CLASS" \
+    -o jsonpath='{.spec.chartRefs[*].chartName}' 2> /dev/null || true)"
+
+  local known="" available=""
+  for chart in $chart_names; do
+    local components
+    components="$(componentsOf "$chart")"
+    [ -n "$components" ] || continue
+    known="yes"
+    available="$available $components"
+
+    if printf '%s' "$components" | tr ' ' '\n' | grep -qx "$COMPONENT"; then
+      return 0
+    fi
+  done
+
+  # The table only speaks about the charts it lists, so a ProductClass built
+  # entirely from charts it does not know gets a pass rather than a refusal.
+  if [ -z "$known" ]; then
+    warning "no chart in ProductClass '$PRODUCT_CLASS' is in the component table; skipping the $COMPONENT check"
+    return 0
+  fi
+
+  error "ProductClass '$PRODUCT_CLASS' deploys no $COMPONENT"
+  error "its charts carry:$(printf '%s' "$available" | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+  error "set PRODUCT_CLASS to one that carries a $COMPONENT"
+  exit 1
 }
 
 # Emits the dotted path of every key in a YAML block. Matching a bare leaf is
@@ -292,6 +344,7 @@ setImage() {
 
   requireInstance "$instance"
   requireProductInTopology "$instance"
+  requireComponent
   warnOnSystemPin
   loadImage "$image"
 
