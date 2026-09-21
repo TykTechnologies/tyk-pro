@@ -187,6 +187,43 @@ tasks:
           echo "the platform.tyk.io CRDs are not installed; the helm release has not run"
         fi
 
+  instances:
+    desc: Lists the deployed stacks, and which of them have a dashboard
+    cmds:
+      - |
+        kubectl --context {{.KUBE_CONTEXT}} get tykdeploymentinstance -o json \
+          | python3 -c '
+        import json, subprocess, sys
+
+        items = json.load(sys.stdin)["items"]
+        if not items:
+            print("no instances; deploy one with: task -d k8s/idp install")
+            raise SystemExit(0)
+
+        print(f"{"NAME":<22} {"TOPOLOGY":<26} {"NAMESPACE":<26} {"PHASE":<12} DASHBOARD")
+        for i in items:
+            status = i.get("status", {})
+            ns = status.get("tenantNamespace", "")
+
+            dash = "-"
+            if ns:
+                # The dashboard service name carries the release hash, so it is
+                # matched on the chart is suffix rather than a fixed name.
+                svcs = subprocess.run(
+                    ["kubectl", "--context", "{{.KUBE_CONTEXT}}", "-n", ns,
+                     "get", "svc", "-o", "name"],
+                    capture_output=True, text=True).stdout
+                dash = "yes" if "-tyk-dashboard" in svcs else "no"
+
+            print(f"{i["metadata"]["name"]:<22} {i["spec"]["tykDeploymentRef"]:<26} "
+                  f"{ns:<26} {status.get("phase", ""):<12} {dash}")
+        '
+
+  seed:
+    desc: Loads API definition files into a deployed stack (set INSTANCE to choose one)
+    cmds:
+      - ./seed.sh {{.CLI_ARGS}}
+
   expose:
     desc: Port-forwards a tenant service so a local gateway can reach it (analytics or redis)
     cmds:

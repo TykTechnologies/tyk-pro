@@ -12,6 +12,7 @@ Three files do the work:
 - `install.sh` deploys one Tyk stack onto that platform.
 - `set-image.sh` swaps the image a deployed product runs, and verifies it.
 - `expose.sh` port-forwards a tenant service to a gateway on this machine.
+- `seed.sh` loads API definition files into a deployed stack.
 - `Taskfile.yaml` wraps all four, and adds the catalogue and image-building
   steps.
 
@@ -243,6 +244,42 @@ task -d k8s/idp show-values INSTANCE=oss-demo
 task -d k8s/idp clear-image INSTANCE=oss-demo
 ```
 
+## Load API definitions into a stack
+
+```bash
+task -d k8s/idp instances
+task -d k8s/idp seed -- ./apis/*.json
+```
+
+`instances` lists the deployed stacks and which of them have a dashboard.
+`seed` takes a list of files, so a shell glob works, and `INSTANCE=` picks the
+stack when more than one exists.
+
+Each file is classified by its contents and sent to the matching endpoint:
+
+| Contents | Endpoint |
+| --- | --- |
+| `openapi` plus `x-tyk-streaming` | `/api/apis/streams/` |
+| `openapi` | `/api/apis/oas` |
+| Anything else | `/api/apis/` |
+
+Re-running updates rather than duplicates. A definition carrying an id the
+stack already holds is sent as a `PUT`, and a file with no id warns that
+re-running creates another copy.
+
+Every file is read and parsed before anything is sent, so a typo cannot leave
+a stack half seeded. A file that fails is reported by name, and the run exits
+non-zero while still seeding the rest.
+
+### Stacks with no dashboard
+
+An OSS stack has no dashboard, so `seed` falls back to the gateway's own API
+and says so. That fallback has a real limit: the gateway writes definitions as
+files under `app_path`, which the chart backs with an `emptyDir`, so they are
+lost on a pod restart, including one caused by `set-gateway`. The gateway API
+also takes classic definitions only, so an OAS file is rejected rather than
+half-converted.
+
 ## Connect a local gateway to a stack in the cluster
 
 A Tyk gateway running on your machine needs three connections to a stack
@@ -394,6 +431,8 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `set-analytics` | The same for the dashboard |
 | `set-pump` | The same for Pump |
 | `set-image` | The same for any values path, the escape hatch behind the three above |
+| `instances` | Lists the deployed stacks, and which have a dashboard |
+| `seed` | Loads API definition files into a stack |
 | `expose` | Port-forwards a tenant service, `analytics` or `redis` |
 | `show-values` | Prints the merged Helm values each Application received |
 | `clear-image` | Removes the override, restoring the chart default |
