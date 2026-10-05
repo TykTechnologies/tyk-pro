@@ -1,0 +1,26 @@
+services:
+  mongo:
+    profiles: ["all", "master-datacenter"]
+    container_name: mongo
+    image: mongo:9
+    environment:
+      # MongoDB's TCMalloc uses rseq for per-CPU caches and corrupts memory on
+      # Linux kernels 6.19-7.0.13 (SERVER-121912), which is where the CI runner
+      # kernel sits. The image ships rseq=0, which leaves rseq to TCMalloc;
+      # rseq=1 makes glibc claim it first so TCMalloc falls back to a safe path.
+      - GLIBC_TUNABLES=glibc.pthread.rseq=1
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh mongo:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  wait_db:
+    profiles: ["all", "master-datacenter"]
+    image: hello-world:linux
+    depends_on:
+        mongo:
+            condition: service_healthy
