@@ -12,10 +12,11 @@
 # Usage:
 #   ./set-image.sh set <instance> <repo:tag>   point a product's chart at an image
 #   ./set-image.sh show <instance>             print the values each Application got
-#   ./set-image.sh clear <instance>            drop the override, restoring the default
+#   ./set-image.sh clear <instance>            drop every override on the instance
+#                                              PRODUCT_CLASS=<name> drops just that one
 #
 # Environment:
-#   PRODUCT_CLASS  ProductClass to target       (default tyk-oss)
+#   PRODUCT_CLASS  ProductClass to target       (resolved from the topology)
 #   KEY            dotted values path to set    (default tyk-gateway.gateway.image)
 #   COMPONENT      component KEY addresses      (unset; set by the set-* tasks)
 #   ROLLOUT_TIMEOUT                             (default 180s)
@@ -54,7 +55,11 @@ done
 
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-tyk-idp}"
 KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
-PRODUCT_CLASS="${PRODUCT_CLASS:-tyk-oss}"
+# No blanket default: tyk-oss carries no dashboard, so defaulting to it made
+# set-analytics fail every time it was run without an explicit PRODUCT_CLASS.
+# When COMPONENT is set, the product is resolved from the instance's own
+# topology instead; see resolveProductClass.
+PRODUCT_CLASS="${PRODUCT_CLASS:-}"
 KEY="${KEY:-tyk-gateway.gateway.image}"
 COMPONENT="${COMPONENT:-}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-180s}"
@@ -107,6 +112,57 @@ componentsOf() {
     tyk-control-plane) echo "gateway pump dashboard" ;;
     tyk-data-plane) echo "gateway pump" ;;
     *) echo "" ;;
+  esac
+}
+
+# Picks the ProductClass carrying COMPONENT out of the instance's topology, so
+# the common case needs no PRODUCT_CLASS at all. Only one product usually
+# carries a given component, and where several do - mdcb-minimal deploys two
+# gateways - the ambiguity is reported rather than guessed at.
+resolveProductClass() {
+  local instance="$1"
+
+  [ -z "$PRODUCT_CLASS" ] || return 0
+
+  if [ -z "$COMPONENT" ]; then
+    error "set PRODUCT_CLASS, or use one of the set-gateway, set-analytics or set-pump tasks"
+    exit 1
+  fi
+
+  local topology
+  topology="$(kc get tykdeploymentinstance "$instance" -o jsonpath='{.spec.tykDeploymentRef}')"
+
+  local matches=""
+  for product in $(kc get tykdeployment "$topology" -o jsonpath='{.spec.products[*].name}'); do
+    local charts
+    charts="$(kc get productclass "$product" \
+      -o jsonpath='{.spec.chartRefs[*].chartName}' 2> /dev/null || true)"
+
+    for chart in $charts; do
+      if componentsOf "$chart" | tr ' ' '\n' | grep -qx "$COMPONENT"; then
+        matches="$matches $product"
+        break
+      fi
+    done
+  done
+
+  # shellcheck disable=SC2086
+  set -- $matches
+  case $# in
+    1)
+      PRODUCT_CLASS="$1"
+      log "resolved $COMPONENT to ProductClass '$PRODUCT_CLASS'"
+      ;;
+    0)
+      error "topology '$topology' deploys no $COMPONENT"
+      error "its products are: $(kc get tykdeployment "$topology" -o jsonpath='{.spec.products[*].name}')"
+      exit 1
+      ;;
+    *)
+      error "topology '$topology' deploys more than one $COMPONENT:$matches"
+      error "set PRODUCT_CLASS to the one you mean"
+      exit 1
+      ;;
   esac
 }
 
@@ -340,6 +396,7 @@ setImage() {
   local repo="${image%:*}" tag="${image##*:}"
 
   requireInstance "$instance"
+  resolveProductClass "$instance"
   requireProductInTopology "$instance"
   requireComponent
   warnOnSystemPin
@@ -392,8 +449,16 @@ clearImage() {
 
   requireInstance "$instance"
 
-  log "removing the $PRODUCT_CLASS override from instance $instance"
-  patchValues "$instance" ""
+  # PRODUCT_CLASS no longer carries a default, so an unset one here means every
+  # override rather than an empty filter that silently matches nothing.
+  if [ -z "$PRODUCT_CLASS" ]; then
+    log "removing every image override from instance $instance"
+    kc patch tykdeploymentinstance "$instance" --type=merge \
+      -p '{"spec":{"values":[]}}' > /dev/null
+  else
+    log "removing the $PRODUCT_CLASS override from instance $instance"
+    patchValues "$instance" ""
+  fi
 
   local namespace
   namespace="$(kc get tykdeploymentinstance "$instance" -o jsonpath='{.status.tenantNamespace}')"

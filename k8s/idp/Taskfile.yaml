@@ -225,7 +225,7 @@ tasks:
       - ./seed.sh {{.CLI_ARGS}}
 
   expose:
-    desc: Port-forwards a tenant service so a local gateway can reach it (analytics or redis)
+    desc: Port-forwards a tenant service to localhost (analytics, redis or gateway)
     cmds:
       - ./expose.sh {{.CLI_ARGS}}
 
@@ -246,19 +246,19 @@ tasks:
         kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} port-forward "svc/$svc" 8080:8080
 
   set-gateway:
-    desc: Points the Tyk gateway at another image (PRODUCT_CLASS defaults to tyk-oss)
+    desc: Points the Tyk gateway at another image (PRODUCT_CLASS is resolved for you)
     cmds:
-      - COMPONENT=gateway KEY=tyk-gateway.gateway.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+      - COMPONENT=gateway KEY=tyk-gateway.gateway.image PRODUCT_CLASS={{.PRODUCT_CLASS}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
 
   set-analytics:
-    desc: Points the Tyk dashboard at another image (needs a PRODUCT_CLASS carrying one)
+    desc: Points the Tyk dashboard at another image (PRODUCT_CLASS is resolved for you)
     cmds:
-      - COMPONENT=dashboard KEY=tyk-dashboard.dashboard.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+      - COMPONENT=dashboard KEY=tyk-dashboard.dashboard.image PRODUCT_CLASS={{.PRODUCT_CLASS}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
 
   set-pump:
-    desc: Points Tyk Pump at another image (needs a PRODUCT_CLASS carrying one)
+    desc: Points Tyk Pump at another image (PRODUCT_CLASS is resolved for you)
     cmds:
-      - COMPONENT=pump KEY=tyk-pump.pump.image PRODUCT_CLASS={{.PRODUCT_CLASS | default "tyk-oss"}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
+      - COMPONENT=pump KEY=tyk-pump.pump.image PRODUCT_CLASS={{.PRODUCT_CLASS}} ./set-image.sh set {{.INSTANCE}} {{.IMAGE}}
 
   set-image:
     desc: Points any values path at another image; the escape hatch behind the set-* tasks
@@ -282,8 +282,35 @@ tasks:
     cmds:
       - kubectl --context {{.KUBE_CONTEXT}} -n {{.IDP_NAMESPACE}} logs -l app.kubernetes.io/component=controller -f --tail=100
 
+  uninstall:
+    desc: Deletes one deployed stack, or all of them with ALL=true
+    cmds:
+      - |
+        if [ "{{.ALL | default "false"}}" = "true" ]; then
+          names="$(kubectl --context {{.KUBE_CONTEXT}} get tykdeploymentinstance \
+            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')"
+        else
+          names="{{.INSTANCE}}"
+        fi
+
+        if [ -z "$names" ]; then
+          echo "nothing to uninstall; pass INSTANCE=<name> or ALL=true"
+          echo "list them with: task -d k8s/idp instances"
+          exit 1
+        fi
+
+        # The tenant namespace and the ArgoCD Applications carry owner
+        # references, so deleting the instance cascades to everything it
+        # created. The finalizer holds the instance until Argo has removed the
+        # Applications, which is why this can take a minute.
+        for name in $names; do
+          echo "==> deleting $name"
+          kubectl --context {{.KUBE_CONTEXT}} delete tykdeploymentinstance "$name" \
+            --ignore-not-found --timeout=180s
+        done
+
   delete:
-    desc: Deletes the kind cluster
+    desc: Deletes the kind cluster, and everything in it
     cmds:
       - |
         if kind get clusters 2> /dev/null | grep -qx "{{.KIND_CLUSTER_NAME}}"; then

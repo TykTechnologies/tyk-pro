@@ -221,15 +221,16 @@ Three tasks cover the Tyk components, each setting the values path for you:
 | `set-analytics` | Dashboard | `tyk-dashboard.dashboard.image` |
 | `set-pump` | Pump | `tyk-pump.pump.image` |
 
-`PRODUCT_CLASS` defaults to `tyk-oss`, so pass it for anything else:
+`PRODUCT_CLASS` is worked out from the instance's own topology, so the common
+case needs nothing more than the instance and the image. Pass it only to settle
+an ambiguity, such as `mdcb-minimal`, which deploys two gateways:
 
 ```bash
-task -d k8s/idp set-analytics INSTANCE=cp-demo PRODUCT_CLASS=tyk-cp-minimal IMAGE=my-dashboard:local
+task -d k8s/idp set-gateway INSTANCE=mdcb-1 PRODUCT_CLASS=tyk-dp-minimal IMAGE=my-gw:local
 ```
 
-Each task checks the ProductClass deploys that component before writing
-anything. Asking for a dashboard on `tyk-oss` fails with the components that
-chart does carry, rather than writing an override that renders nothing.
+A topology that deploys no such component fails naming what it does deploy,
+and one that deploys several reports them rather than guessing.
 
 `set-image` remains the escape hatch for any other values path, and its `KEY`
 carries the subchart prefix. `tyk-oss` is an umbrella chart, so values
