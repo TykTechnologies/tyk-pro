@@ -49,21 +49,45 @@ KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 DEPLOY_TIMEOUT="${DEPLOY_TIMEOUT:-900s}"
 
 # The controller copies OwnerRef.Email onto the platform.tyk.io/owner-user-id
-# label verbatim, and a label value cannot contain "@". An address here puts
-# the reconciler into a loop that reports nothing on the resource, so strip
-# everything a label rejects.
-defaultOwner() {
-  local raw
-  raw="$(git config user.name 2> /dev/null || echo "")"
-  [ -n "$raw" ] || raw="$(id -un)"
-
-  printf '%s' "$raw" \
+# label verbatim, and a label value cannot contain "@". An address there puts
+# the reconciler into a loop that fails before it writes status, so the
+# instance shows no phase, no conditions and no message - the only evidence is
+# a repeating stack trace in the controller log, and this script waits on a
+# phase that never arrives.
+#
+# Sanitising is deliberately separate from defaulting. Folding the two into
+# OWNER="${OWNER:-$(defaultOwner)}" tied the cleaning to generating a value, so
+# anything the caller supplied - from .env, an export, or an inline assignment -
+# reached the manifest untouched. The field is called email, so an address is
+# the obvious thing to put there.
+sanitiseOwner() {
+  printf '%s' "$1" \
     | tr '[:upper:]' '[:lower:]' \
     | tr -c '[:alnum:]._-' '-' \
     | sed -e 's/^[^[:alnum:]]*//' -e 's/[^[:alnum:]]*$//'
 }
 
-OWNER="${OWNER:-$(defaultOwner)}"
+defaultOwner() {
+  local raw
+  raw="$(git config user.name 2> /dev/null || echo "")"
+  [ -n "$raw" ] || raw="$(id -un)"
+  printf '%s' "$raw"
+}
+
+OWNER_GIVEN="${OWNER:-$(defaultOwner)}"
+OWNER="$(sanitiseOwner "$OWNER_GIVEN")"
+
+if [ -z "$OWNER" ]; then
+  error "owner '$OWNER_GIVEN' leaves nothing a Kubernetes label accepts"
+  error "set OWNER to something alphanumeric, such as your Atlassian account id"
+  exit 1
+fi
+
+# Said out loud, because the owner label will not match what was asked for and
+# the difference is otherwise invisible until someone searches by it.
+if [ "$OWNER" != "$OWNER_GIVEN" ]; then
+  warning "owner '$OWNER_GIVEN' is not a valid label value, using '$OWNER'"
+fi
 
 kc() {
   kubectl --context "$KUBE_CONTEXT" "$@"
@@ -162,14 +186,31 @@ requireTopology() {
 ######################################
 # Instances are cluster-scoped, so a fixed name collides as soon as you want a
 # second copy of the same stack. Count up until a name is free.
+# The stack charts build a bootstrap Job named
+# bootstrap-post-install-<release>-tyk-bootstrap, where <release> is the
+# instance name plus a hash. tyk-bootstrap.fullname truncates at 63, but the
+# Job template then prefixes 23 more characters without truncating again, so a
+# long instance name produces a label over the 63 character limit and the
+# PostSync hook fails outright. tyk-operator-conf is never created, and any
+# postInstall waiting on it blocks until it times out.
+#
+# 12 characters keeps the whole name inside the limit with room for the hash.
+MAX_TOPOLOGY_PREFIX=12
+
 nextName() {
   local topology="$1" n=1
 
-  while kc get tykdeploymentinstance "${topology}-${n}" > /dev/null 2>&1; do
+  local prefix="$topology"
+  if [ "${#prefix}" -gt "$MAX_TOPOLOGY_PREFIX" ]; then
+    prefix="$(printf '%s' "$topology" | cut -c1-"$MAX_TOPOLOGY_PREFIX")"
+    prefix="${prefix%-}"
+  fi
+
+  while kc get tykdeploymentinstance "${prefix}-${n}" > /dev/null 2>&1; do
     n=$((n + 1))
   done
 
-  printf '%s-%s' "$topology" "$n"
+  printf '%s-%s' "$prefix" "$n"
 }
 
 createInstance() {
