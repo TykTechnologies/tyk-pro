@@ -53,7 +53,7 @@ To check your tooling, run:
 task -d k8s/idp deps
 ```
 
-That reports `docker`, `kind`, `kubectl`, and `helm`, warns when the Docker
+That reports `docker`, `kind`, `kubectl`, `helm`, and `python3`, warns when the Docker
 daemon is unreachable, and prints your Docker context. When something is
 missing, it asks before installing it through Homebrew, and installs only what
 is absent, so it never moves you off a version you pinned. Required and

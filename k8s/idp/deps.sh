@@ -21,9 +21,12 @@ cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
 source "${SCRIPT_DIR}/../tyk-stack-ingress/lib.sh"
 
-# setup.sh's own checkDependencies covers these four, so the list has to stay in
-# step with it.
-REQUIRED=(docker kind kubectl helm)
+# setup.sh's own checkDependencies covers docker, kind, kubectl and helm, so
+# those four have to stay in step with it. python3 is required by the tooling
+# here rather than by setup.sh: install.sh, seed.sh, set-image.sh and the
+# instances task all shell out to it, and macOS only ships it with the Xcode
+# command line tools, so it cannot be assumed present.
+REQUIRED=(docker kind kubectl helm python3)
 
 # Not needed to stand the environment up. `go` runs the controller and
 # api-server from source, `ngrok` exposes a local api-server to a Forge tunnel.
@@ -41,6 +44,7 @@ versionOf() {
     helm) helm version --short 2> /dev/null ;;
     go) go version 2> /dev/null ;;
     ngrok) ngrok --version 2> /dev/null ;;
+    python3) python3 --version 2> /dev/null ;;
     *) echo "installed" ;;
   esac
 }
