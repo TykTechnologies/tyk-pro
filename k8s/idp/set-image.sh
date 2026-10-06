@@ -292,9 +292,35 @@ renderValues() {
 findWorkload() {
   local namespace="$1" image="$2"
 
-  kc -n "$namespace" get deploy,statefulset \
-    -o jsonpath="{range .items[?(@.spec.template.spec.containers[0].image=='${image}')]}{.kind}/{.metadata.name}{'\n'}{end}" \
-    2> /dev/null | head -1
+  # Every container, not just the first. A sidecar - the charts expose
+  # extraContainers, and a service mesh injects its own - can take index 0 and
+  # push the component down the list. Matching only containers[0] would then
+  # find nothing and report a rollout that in fact succeeded as a failure,
+  # which sends the reader off debugging a KEY that was right all along.
+  #
+  # kubectl jsonpath cannot express "any element of a nested array matches", so
+  # the scan happens in python3 rather than in the query.
+  kc -n "$namespace" get deploy,statefulset -o json 2> /dev/null \
+    | IMAGE="$image" python3 -c '
+import json
+import os
+import sys
+
+image = os.environ["IMAGE"]
+
+for workload in json.load(sys.stdin).get("items", []):
+    spec = workload["spec"]["template"]["spec"]
+
+    # initContainers too: a chart can do the swapped work in one, and a
+    # rollout that only changed an init container is still a real rollout.
+    containers = spec.get("containers", []) + spec.get("initContainers", [])
+
+    if any(c.get("image") == image for c in containers):
+        kind = workload["kind"]
+        name = workload["metadata"]["name"]
+        print(kind + "/" + name)
+        break
+'
 }
 
 verifyRollout() {
