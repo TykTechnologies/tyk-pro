@@ -225,7 +225,7 @@ tasks:
       - ./seed.sh {{.CLI_ARGS}}
 
   expose:
-    desc: Port-forwards a tenant service to localhost (analytics, redis or gateway)
+    desc: Port-forwards a tenant service to localhost (analytics or gateway)
     cmds:
       - ./expose.sh {{.CLI_ARGS}}
 

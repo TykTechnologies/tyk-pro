@@ -265,6 +265,23 @@ def api_id(doc, kind):
     return doc.get("x-tyk-api-gateway", {}).get("info", {}).get("id")
 
 
+def payload(doc, kind, mode):
+    """The dashboard takes a classic definition wrapped in an api_definition
+    object and rejects a bare one; the gateway's own API takes the bare
+    definition and rejects the wrapper. Either shape is accepted on the way in,
+    so a file written for one target still loads into the other. OAS and
+    streams have no wrapper and go through untouched."""
+    if kind != "classic":
+        return doc
+
+    wrapped = "api_definition" in doc
+
+    if mode == "gateway":
+        return doc["api_definition"] if wrapped else doc
+
+    return doc if wrapped else {"api_definition": doc}
+
+
 DASHBOARD_PATHS = {
     "classic": ("/api/apis/", "/api/apis/{id}"),
     "oas": ("/api/apis/oas", "/api/apis/oas/{id}"),
@@ -304,12 +321,12 @@ for path in sys.argv[1:]:
         exists = status == 200
 
     if exists:
-        status, body = call("PUT", update_path.format(id=ident), doc)
+        status, body = call("PUT", update_path.format(id=ident), payload(doc, kind, MODE))
         action, bucket = "updated", updated
     else:
         if not ident:
             warn(f"{name}: no api id, so re-running this file creates another copy")
-        status, body = call("POST", create_path, doc)
+        status, body = call("POST", create_path, payload(doc, kind, MODE))
         action, bucket = "created", created
 
     if 200 <= status < 300:

@@ -1,0 +1,83 @@
+{
+  "name": "GraphQL UDG API",
+  "api_id": "graphql-udg-1",
+  "org_id": "default",
+  "active": true,
+  "use_keyless": true,
+  "version_data": {
+    "not_versioned": true,
+    "versions": {
+      "Default": {
+        "name": "Default"
+      }
+    }
+  },
+  "proxy": {
+    "listen_path": "/udg/",
+    "target_url": "http://localhost",
+    "strip_listen_path": true
+  },
+  "graphql": {
+    "enabled": true,
+    "execution_mode": "executionEngine",
+    "version": "2",
+    "schema": "type User {\n  id: Int\n  name: String\n  username: String\n  email: String\n}\n\ntype Country {\n  code: ID\n  name: String\n  capital: String\n  currency: String\n  emoji: String\n}\n\ntype Query {\n  user: User\n  country(code: ID!): Country\n}\n",
+    "playground": {
+      "enabled": true,
+      "path": "/playground"
+    },
+    "engine": {
+      "field_configs": [
+        {
+          "type_name": "Query",
+          "field_name": "user",
+          "disable_default_mapping": true,
+          "path": []
+        },
+        {
+          "type_name": "Query",
+          "field_name": "country",
+          "disable_default_mapping": false,
+          "path": ["country"]
+        }
+      ],
+      "data_sources": [
+        {
+          "kind": "REST",
+          "name": "users-service",
+          "internal": false,
+          "root_fields": [
+            {
+              "type": "Query",
+              "fields": ["user"]
+            }
+          ],
+          "config": {
+            "url": "https://jsonplaceholder.typicode.com/users/1",
+            "method": "GET",
+            "headers": {},
+            "query": [],
+            "body": ""
+          }
+        },
+        {
+          "kind": "GraphQL",
+          "name": "countries-service",
+          "internal": false,
+          "root_fields": [
+            {
+              "type": "Query",
+              "fields": ["country"]
+            }
+          ],
+          "config": {
+            "url": "http://countries-graphql:4000/graphql",
+            "method": "POST",
+            "headers": {},
+            "has_operation": false
+          }
+        }
+      ]
+    }
+  }
+}

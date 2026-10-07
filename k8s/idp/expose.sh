@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 
-# Port-forwards a service inside a tenant namespace to localhost, so a Tyk
-# gateway running on this machine can reach the stack deployed in the cluster.
+# Port-forwards a Tyk service inside a tenant namespace to localhost.
 #
-# A local gateway needs three connections, and two of them are outbound from
-# the gateway, which is what this script covers:
+# analytics serves the dashboard to a browser, or to a gateway running on this
+# machine for config polling and node registration. gateway serves the
+# in-cluster gateway, so its proxy and admin API can be called directly.
 #
-#   gateway -> dashboard   HTTP, config polling and node registration
-#   gateway -> redis       reload signals, published on tyk.cluster.notifications
-#
-# The third, dashboard -> gateway for key and certificate management, is
-# inbound to your machine and needs tyk_api_config on the dashboard instead.
-# See the readme.
+# A local gateway needs more than the dashboard: the stack's Redis for reload
+# signals, and a route from the dashboard back to it for key management. See
+# the readme.
 #
 # Usage:
 #   ./expose.sh analytics [instance]   dashboard on localhost:3000
-#   ./expose.sh redis [instance]       redis on localhost:6379
+#   ./expose.sh gateway [instance]     gateway on localhost:8080
 #
 # Environment:
 #   LOCAL_PORT  listen on a different local port
@@ -36,9 +33,9 @@ kc() {
 }
 
 usage() {
-  error "usage: $0 [analytics|redis] [instance]"
+  error "usage: $0 [analytics|gateway] [instance]"
   error "  analytics  the Tyk dashboard, on localhost:3000"
-  error "  redis      the reload channel, on localhost:6379"
+  error "  gateway    the Tyk gateway, on localhost:8080"
   exit 1
 }
 
@@ -58,11 +55,9 @@ serviceFor() {
       kc -n "$namespace" get svc -o name \
         | sed 's|service/||' | grep -- '-tyk-dashboard$' | head -1 || true
       ;;
-    redis)
-      # redis-headless carries the same ports; the plain service is the one
-      # the charts point their clients at.
+    gateway)
       kc -n "$namespace" get svc -o name \
-        | sed 's|service/||' | grep -x 'redis' | head -1 || true
+        | sed 's|service/||' | grep -- '-tyk-gateway$' | head -1 || true
       ;;
   esac
 }
@@ -70,24 +65,36 @@ serviceFor() {
 remotePortFor() {
   case "$1" in
     analytics) echo 3000 ;;
-    redis) echo 6379 ;;
+    gateway) echo 8080 ;;
   esac
 }
 
-# What to put in the gateway's own config once the forward is up.
+# What to do with the forward once it is up. analytics is something a gateway
+# on this machine consumes, so it prints config; gateway is something you call,
+# so it prints requests.
 hintFor() {
   local target="$1" port="$2"
 
   case "$target" in
     analytics)
-      log "point your local gateway at it with:"
+      log "open http://localhost:${port} in a browser, or point a local gateway at it:"
       log "  db_app_conf_options.connection_string = http://localhost:${port}"
       log "  policies.policy_connection_string     = http://localhost:${port}"
       ;;
-    redis)
-      log "point your local gateway at it with:"
-      log "  storage.host = localhost"
-      log "  storage.port = ${port}"
+    gateway)
+      log "check it with:"
+      log "  curl http://localhost:${port}/hello"
+
+      # Printed as a command rather than a value: the admin secret would
+      # otherwise sit in terminal scrollback and in any log this output reaches.
+      local secret
+      secret="$(kc -n "$NAMESPACE" get secret -o name \
+        | sed 's|secret/||' | grep -- '-tyk-gateway$' | head -1 || true)"
+      if [ -n "$secret" ]; then
+        log "the admin API needs an x-tyk-authorization header, read it with:"
+        log "  kubectl --context $KUBE_CONTEXT -n $NAMESPACE get secret $secret \\"
+        log "    -o jsonpath='{.data.APISecret}' | base64 -d"
+      fi
       ;;
   esac
 }
@@ -138,7 +145,7 @@ resolveNamespace() {
 ######################################
 TARGET="${1-}"
 case "$TARGET" in
-  analytics | redis) ;;
+  analytics | gateway) ;;
   *) usage ;;
 esac
 
@@ -159,11 +166,7 @@ LOCAL_PORT="${LOCAL_PORT:-$REMOTE_PORT}"
 
 log "exposing $TARGET from $INSTANCE"
 log "  service  $SERVICE in $NAMESPACE"
-if [ "$TARGET" = "redis" ]; then
-  log "  address  localhost:${LOCAL_PORT}"
-else
-  log "  url      http://localhost:${LOCAL_PORT}"
-fi
+log "  url      http://localhost:${LOCAL_PORT}"
 hintFor "$TARGET" "$LOCAL_PORT"
 log "ctrl-c to stop"
 

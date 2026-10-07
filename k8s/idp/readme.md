@@ -284,12 +284,12 @@ half-converted.
 ## Connect a local gateway to a stack in the cluster
 
 A Tyk gateway running on your machine needs three connections to a stack
-deployed in the cluster. Two are outbound from the gateway, and `expose`
-covers those:
+deployed in the cluster. Two are outbound from the gateway: `expose` covers
+the dashboard, and Redis takes a plain port-forward:
 
 ```bash
 task -d k8s/idp expose -- analytics    # dashboard on localhost:3000
-task -d k8s/idp expose -- redis        # redis on localhost:6379
+kubectl --context kind-tyk-idp -n <tenant-namespace> port-forward svc/redis 6379:6379
 ```
 
 Each runs in the foreground until you stop it, so give them a terminal each.
@@ -434,7 +434,7 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `set-image` | The same for any values path, the escape hatch behind the three above |
 | `instances` | Lists the deployed stacks, and which have a dashboard |
 | `seed` | Loads API definition files into a stack |
-| `expose` | Port-forwards a tenant service, `analytics` or `redis` |
+| `expose` | Port-forwards a tenant service, `analytics` or `gateway` |
 | `show-values` | Prints the merged Helm values each Application received |
 | `clear-image` | Removes the override, restoring the chart default |
 | `logs` | Follows the controller logs |
