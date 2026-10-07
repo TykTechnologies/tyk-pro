@@ -1,0 +1,22 @@
+# Tyk OSS: gateway plus Redis, no dashboard and no license needed.
+# The lightest thing in the catalogue, and the fastest way to confirm the
+# controller, ArgoCD, and tenant namespace creation all work.
+#
+# Apply with:
+#   kubectl --context kind-tyk-idp apply -f k8s/idp/examples/tyk-oss.yaml
+#
+# To target a different setup, change tykDeploymentRef. List what is available
+# with: kubectl --context kind-tyk-idp get tykdeployment
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeploymentInstance
+metadata:
+  name: oss-demo
+spec:
+  humanReadableName: OSS demo
+  tykDeploymentRef: simple-tyk-oss
+  ownerRef:
+    # The controller copies this value verbatim onto the
+    # platform.tyk.io/owner-user-id label, and a label value cannot contain
+    # "@". An address here puts the reconciler into a failing loop, so use the
+    # Atlassian account ID, which is alphanumeric.
+    email: kofo.okesola
