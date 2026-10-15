@@ -26,5 +26,13 @@ jobs:
           export tyk_ee_image="$image" tyk_analytics_image="$image" tyk_pump_image="$image" tyk_sink_image="$image" tyk_mock_image="$image"
           for cache in redis7 valkey9; do
             docker compose -f mcp.yml -f mongo7.yml -f postgres15.yml -f "$cache.yml" \
-              --profile all config --quiet
+              --profile all config --format json > /tmp/mcp-compose.json
+            python3 - <<'PY'
+          import json
+          from pathlib import Path, PurePosixPath
+          dashboard = json.loads(Path('/tmp/mcp-compose.json').read_text())['services']['tyk-analytics']
+          # Runtime files may live elsewhere, but Portal templates resolve
+          # against the asset directory shipped beside the image binary.
+          assert dashboard['environment']['TYK_DB_HOMEDIR'] == str(PurePosixPath(dashboard['entrypoint'][0]).parent)
+          PY
           done

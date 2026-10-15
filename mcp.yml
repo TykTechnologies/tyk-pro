@@ -22,6 +22,9 @@ services:
     command: ["--conf", "${MCP_RUNTIME_DIR}/dashboard.conf"]
     environment:
       TYK_DB_LICENSEKEY: ${TYK_DB_LICENSEKEY}
+      # Runtime configs stay private in the mounted directory; Dashboard's
+      # shipped Portal templates must still resolve from the image asset root.
+      TYK_DB_HOMEDIR: /opt/tyk-dashboard
   tyk-pump:
     <<: *mcp-app
     image: ${tyk_pump_image:?}
