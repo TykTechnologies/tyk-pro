@@ -186,3 +186,30 @@ $ pytest -c pytest_local.ini --ci -m "not local and not dind and not sql"
 For information on upgrade tests, please refer to the [Upgrade Tests README](upgrade-env/readme.md).
 
 test auto gates
+
+## MCP rows in API tests
+
+The `mcp.yml` profile runs the published Gateway, Dashboard, Pump, Sink and mock
+images selected by the API test controller. It uses the existing `mongo7.yml`,
+`postgres15.yml` and `redis7.yml`/`valkey9.yml` datastore overlays. Every matrix row
+has its own CI runner and Compose project. The regular HA profiles remain the
+default for other API rows.
+
+MCP application containers use Linux host networking so pytest's localhost
+upstream fixtures remain reachable. The runtime mounts a protected, generated
+configuration directory and uses the runner's UID/GID, including with distroless
+images. Set `MCP_RUNTIME_DIR`, `MCP_API_ROOT`, `MCP_UID` and `MCP_GID`; image
+variables use registry digests resolved once by the controller. Dashboard's
+`mcp_api_stack.py` owns configuration, RPC identity, readiness, Gateway log
+assertions, qualification evidence and identity cleanup. The shared `env-up`,
+`api-tests` and `reporting` actions own orchestration and removal of this stack.
+
+Each PR qualifies four module shards for both serializers and both Dashboard
+stores. Sink callers select the MDCB data plane and hybrid Pump; other callers
+select direct Gateway/Pump. Backing services use the same loopback ports as the
+repository's API profiles. This profile is intended for isolated Linux CI
+runners; it must not be started against user-owned services on those ports.
+
+The dedicated configuration workflow validates both overlay combinations without
+pulling images or starting containers. Full qualification runs through each
+component PR's `api-tests` matrix and required aggregate.

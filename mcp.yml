@@ -1,0 +1,70 @@
+# API-test MCP rows use published CI images and the standard datastore overlays.
+# Host networking is Linux-only and lets upstream fixtures bound by pytest on
+# localhost remain reachable by Gateway, matching the qualification contract.
+x-mcp-app: &mcp-app
+  network_mode: host
+  user: "${MCP_UID:?}:${MCP_GID:?}"
+  working_dir: ${MCP_RUNTIME_DIR:?}
+  volumes:
+    - ${MCP_RUNTIME_DIR}:${MCP_RUNTIME_DIR}
+  restart: "no"
+
+services:
+  tyk:
+    <<: *mcp-app
+    image: ${tyk_ee_image:?}
+    entrypoint: ["/opt/tyk-gateway/tyk"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/gateway.conf"]
+  tyk-analytics:
+    <<: *mcp-app
+    image: ${tyk_analytics_image:?}
+    entrypoint: ["/opt/tyk-dashboard/tyk-analytics"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/dashboard.conf"]
+    environment:
+      TYK_DB_LICENSEKEY: ${TYK_DB_LICENSEKEY}
+  tyk-pump:
+    <<: *mcp-app
+    image: ${tyk_pump_image:?}
+    entrypoint: ["/opt/tyk-pump/tyk-pump"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/pump.conf"]
+  tyk-sink:
+    <<: *mcp-app
+    image: ${tyk_sink_image:-unused}
+    entrypoint: ["/opt/tyk-sink/tyk-sink"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/sink.conf"]
+    environment:
+      TYK_MDCB_LICENSE: ${TYK_MDCB_LICENSE}
+  tyk-gateway-datacenter-1-alfa:
+    <<: *mcp-app
+    image: ${tyk_ee_image:?}
+    entrypoint: ["/opt/tyk-gateway/tyk"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/data-plane.conf"]
+  tyk-data-plane-pump:
+    <<: *mcp-app
+    image: ${tyk_pump_image:?}
+    entrypoint: ["/opt/tyk-pump/tyk-pump"]
+    command: ["--conf", "${MCP_RUNTIME_DIR}/data-plane-pump.conf"]
+  mcp-server:
+    image: ${tyk_mock_image:?}
+    network_mode: host
+    environment:
+      PORT: "7878"
+      DEBUG: "false"
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    command: ["start-dev", "--import-realm", "--health-enabled=true"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports: ["127.0.0.1:8180:8080"]
+    volumes:
+      - ${MCP_API_ROOT:?}/keycloak/mcp-test-realm.json:/opt/keycloak/data/import/mcp-test-realm.json:ro
+  httpbin:
+    image: mccutchen/go-httpbin:v2.15.0
+    ports: ["127.0.0.1:9879:8080"]
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.100.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports: ["127.0.0.1:4317:4317", "127.0.0.1:13133:13133"]
+    volumes:
+      - ${MCP_API_ROOT}/fixtures/mcp_v2/collector.yml:/etc/otelcol/config.yaml:ro

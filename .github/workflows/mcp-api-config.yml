@@ -1,0 +1,30 @@
+name: MCP API environment configuration
+on:
+  pull_request:
+    paths: [mcp.yml, valkey9.yml, mongo7.yml, postgres15.yml, redis7.yml, .github/workflows/mcp-api-config.yml]
+permissions:
+  contents: read
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Validate both API datastore and cache compositions
+        env:
+          MCP_API_ROOT: /tmp/mcp-api-fixture
+          MCP_RUNTIME_DIR: /tmp/mcp-api-runtime
+          MCP_UID: '1001'
+          MCP_GID: '1001'
+          TYK_DB_LICENSEKEY: ''
+          TYK_MDCB_LICENSE: ''
+        run: |
+          set -euo pipefail
+          # A syntactically valid fixture digest; config validation never pulls it.
+          image="example.invalid/fixture@sha256:$(printf '%064d' 0)"
+          export tyk_ee_image="$image" tyk_analytics_image="$image" tyk_pump_image="$image" tyk_sink_image="$image" tyk_mock_image="$image"
+          for cache in redis7 valkey9; do
+            docker compose -f mcp.yml -f mongo7.yml -f postgres15.yml -f "$cache.yml" \
+              --profile all config --quiet
+          done
