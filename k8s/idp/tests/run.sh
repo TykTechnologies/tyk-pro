@@ -28,6 +28,10 @@ source "${IDP_DIR}/../tyk-stack-ingress/lib.sh"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-tyk-idp}"
 KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 IDP_CONTROLLER_ROOT="${IDP_CONTROLLER_ROOT:-$(cd ../.. && pwd)/../idp-controller}"
+# catalog.sh prints the checkout's resolved path, so compare against the same.
+if [ -d "$IDP_CONTROLLER_ROOT" ]; then
+  IDP_CONTROLLER_ROOT="$(cd "$IDP_CONTROLLER_ROOT" && pwd)"
+fi
 export IDP_CONTROLLER_ROOT KIND_CLUSTER_NAME
 
 kc() {
