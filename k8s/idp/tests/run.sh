@@ -141,24 +141,19 @@ instanceCount() {
 ######################################
 # offline cases
 ######################################
-test_lists_nested_folder_in_order() {
-  run ./catalog.sh --list "$FIXTURES/valid-nested"
+# One run covers discovery: subfolders two deep, both extensions, other files
+# ignored, a fixed order, and a relative folder resolved against where task
+# ran rather than against k8s/idp.
+test_finds_nested_files_from_relative_folder() {
+  run env CALLER_DIR="$FIXTURES" ./catalog.sh --list valid-nested
   assert_exit 0 || return
   local want
   want="$(printf '%s\n' \
     "$FIXTURES/valid-nested/a-classes/catalog-test-chart.yaml" \
+    "$FIXTURES/valid-nested/topologies/catalog-test-multi.yaml" \
     "$FIXTURES/valid-nested/topologies/nested/catalog-test-extra.yml" \
     "$FIXTURES/valid-nested/topologies/nested/deeper/catalog-test-stack.yaml")"
   [ "$OUT" = "$want" ] || fail "wrong files or order"
-}
-
-test_picks_up_yaml_and_yml_only() {
-  run ./catalog.sh --list "$FIXTURES/valid-nested"
-  assert_exit 0 || return
-  assert_contains ".yaml" || return
-  assert_contains ".yml" || return
-  assert_lacks "ignored.json" || return
-  assert_lacks "notes.txt"
 }
 
 test_missing_folder() {
@@ -205,12 +200,6 @@ test_unreadable_subfolder() {
   assert_contains "cannot read everything under"
 }
 
-test_relative_folder_resolves_against_caller() {
-  run env CALLER_DIR="$FIXTURES" ./catalog.sh --list valid-nested
-  assert_exit 0 || return
-  assert_contains "$FIXTURES/valid-nested/a-classes/catalog-test-chart.yaml"
-}
-
 test_rejects_unknown_flag() {
   run ./catalog.sh --apply-everything
   assert_exit 1 || return
@@ -241,28 +230,21 @@ test_default_lists_dev_catalogue() {
 ######################################
 # cluster cases
 ######################################
-test_applies_valid_nested_folder() {
+# One folder covers loading: files from nested folders, a file holding two
+# resources, and a second load that changes nothing.
+test_loads_valid_folder() {
   run ./catalog.sh "$FIXTURES/valid-nested"
   assert_exit 0 || return
-  assert_contains "3 valid, 0 failed" || return
+  assert_contains "4 valid, 0 failed" || return
   assert_exists productclass catalog-test-chart || return
   assert_exists productclass catalog-test-extra || return
-  assert_exists tykdeployment catalog-test-stack
-}
-
-test_reapplying_is_idempotent() {
-  run ./catalog.sh "$FIXTURES/valid-nested"
-  assert_exit 0 || return
-  run ./catalog.sh "$FIXTURES/valid-nested"
-  assert_exit 0 || return
-  assert_contains "unchanged"
-}
-
-test_multi_document_file() {
-  run ./catalog.sh "$FIXTURES/multi-doc"
-  assert_exit 0 || return
   assert_exists productclass catalog-test-multi || return
-  assert_exists tykdeployment catalog-test-multi
+  assert_exists tykdeployment catalog-test-stack || return
+  assert_exists tykdeployment catalog-test-multi || return
+  run ./catalog.sh "$FIXTURES/valid-nested"
+  assert_exit 0 || return
+  assert_contains "unchanged" || return
+  assert_lacks "created"
 }
 
 test_malformed_yaml() {
@@ -410,23 +392,19 @@ trap cleanup EXIT
 cleanup
 
 log "offline"
-check test_lists_nested_folder_in_order
-check test_picks_up_yaml_and_yml_only
+check test_finds_nested_files_from_relative_folder
 check test_missing_folder
 check test_empty_folder
 check test_folder_without_yaml
 check test_file_instead_of_folder
 check test_unreadable_subfolder
-check test_relative_folder_resolves_against_caller
 check test_rejects_unknown_flag
 check test_no_cluster_fails_clearly
 check test_default_lists_dev_catalogue
 
 log "cluster"
 for t in \
-  test_applies_valid_nested_folder \
-  test_reapplying_is_idempotent \
-  test_multi_document_file \
+  test_loads_valid_folder \
   test_malformed_yaml \
   test_invalid_deployment_schema \
   test_invalid_deployment_dangling_ref \
