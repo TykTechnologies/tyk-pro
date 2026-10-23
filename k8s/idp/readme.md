@@ -5,7 +5,7 @@ This folder builds a local environment for
 cluster carrying the operators the controller depends on, the controller and
 api-server themselves, and the catalogue of products users deploy from.
 
-Three files do the work:
+These files do the work:
 
 - `deps.sh` checks and installs the prerequisite tooling on your workstation.
 - `setup.sh` creates the cluster and deploys the idp-controller release.
@@ -13,8 +13,8 @@ Three files do the work:
 - `set-image.sh` swaps the image a deployed product runs, and verifies it.
 - `expose.sh` port-forwards a tenant service to a gateway on this machine.
 - `seed.sh` loads API definition files into a deployed stack.
-- `Taskfile.yaml` wraps all four, and adds the catalogue and image-building
-  steps.
+- `catalog.sh` validates and applies a catalogue folder, the dev one or yours.
+- `Taskfile.yaml` wraps them all, and adds the image-building steps.
 
 Nothing in `setup.sh` installs a tool, and no cluster task installs one as a
 side effect. `deps` asks before installing anything.
@@ -153,6 +153,107 @@ catalogue:
 ```bash
 curl -s http://localhost:8080/api/v1/tykdeployments | jq '.totalCount'
 ```
+
+## Install a catalogue from your own folder
+
+By default, `setup` applies the dev catalogue from the idp-controller checkout.
+To use your own ProductClass and TykDeployment files instead, point `CATALOG`
+at a folder:
+
+```bash
+task -d k8s/idp install CATALOG=./my-catalogue
+```
+
+That command validates every file in the folder, applies them, and then offers
+the folder's TykDeployments to deploy, so one command takes you from files to a
+running stack. To build the platform with your catalogue in place of the dev
+one, pass the same variable to `setup`:
+
+```bash
+task -d k8s/idp setup CATALOG=./my-catalogue
+```
+
+A relative path resolves against the directory you run `task` from. Without
+`CATALOG`, both tasks behave as they always have.
+
+### What the folder holds
+
+`catalog.sh` searches the folder, and every folder beneath it, for files ending
+in `.yaml` or `.yml`, and ignores every other file. The layout is up to you.
+The dev catalogue's split works, and so does anything deeper:
+
+```
+my-catalogue/
+├── product-classes/
+│   ├── tyk-oss.yaml
+│   └── redis/simple-redis.yml
+└── topologies/
+    └── my-stack.yaml
+```
+
+Each file holds one or more ProductClass or TykDeployment resources, separated
+by `---`. Files apply in the byte order of their paths, so a folder applies the
+same way on every machine.
+
+### What is checked
+
+Every file is checked before any file is applied. If one fails, nothing is
+applied: the run names each failing file and why, and exits non-zero. The
+following checks run:
+
+| Check | Fails on |
+| --- | --- |
+| `kubectl apply --dry-run=server` | Malformed YAML, and resources the CRDs reject |
+| Kind | Any resource other than a ProductClass or TykDeployment |
+| Uniqueness | The same kind and name defined twice, where the later file would silently win |
+| Content | A file that holds no resources |
+| References | A TykDeployment naming a ProductClass that is in neither the folder nor the cluster |
+
+The reference check exists because the api-server accepts and lists such a
+TykDeployment, and the controller fails only when someone deploys it. An
+addon's products count when the addon defaults to `Enabled`. When it defaults
+to `Disabled`, a missing ProductClass gets a warning instead, because the stack
+deploys until someone switches the addon on. The dev catalogue has one:
+`mdcb-minimal`'s `devPortal` addon names `portal-postgres`, which only the prod
+catalogue defines.
+
+The checks need the running cluster, because the dry run validates against the
+CRDs the release installs. Without a cluster, `catalog.sh` stops before
+validating any file and tells you to run `setup`.
+
+Validation is all-or-nothing, but the apply is not a transaction. It is one
+`kubectl apply`, so a cluster failure partway through can leave some files
+applied. Running the command again is safe.
+
+To check a folder without applying it, or to see which files it would apply,
+call the script directly:
+
+```bash
+k8s/idp/catalog.sh --check ./my-catalogue
+k8s/idp/catalog.sh --list ./my-catalogue
+```
+
+To remove what a folder applied:
+
+```bash
+task -d k8s/idp catalog-delete CATALOG=./my-catalogue
+```
+
+### Run the tests
+
+```bash
+task -d k8s/idp test
+```
+
+The cases fall into two tiers. Offline cases cover finding files and rejecting
+bad paths, and run anywhere. Cluster cases cover every check and the `install`
+path, and run only when the kind cluster is up; without it, each prints
+`SKIP (no cluster)`. After `setup`, run `TEST_CLUSTER=require task -d k8s/idp
+test` so that a skip counts as a failure.
+
+Fixtures live in `tests/fixtures`, one folder for each case. Every resource
+they create is named `catalog-test-*`, and the suite removes those resources
+before each case and when it exits.
 
 ## Build and use a local image
 
@@ -423,9 +524,9 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | --- | --- |
 | `deps` | Reports every prerequisite and offers to install what is missing |
 | `setup` | Builds the platform: cluster, operators, release, catalogue |
-| `install` | Deploys a Tyk stack, asking which one |
+| `install` | Deploys a Tyk stack, asking which one; `CATALOG=<folder>` applies yours first |
 | `operators` | Cluster and operators only, no release |
-| `catalog-delete` | Removes the ProductClass and TykDeployment resources |
+| `catalog-delete` | Removes the catalogue's ProductClass and TykDeployment resources; `CATALOG=<folder>` for yours |
 | `status` | Reports each layer |
 | `port-forward` | Serves the api-server on `localhost:8080` |
 | `set-gateway` | Points the gateway at another image and waits for the workload to run it |
@@ -438,6 +539,7 @@ Run `task -d k8s/idp --list` for the current set. Grouped by what they touch:
 | `show-values` | Prints the merged Helm values each Application received |
 | `clear-image` | Removes the override, restoring the chart default |
 | `logs` | Follows the controller logs |
+| `test` | Tests `catalog.sh`; cluster cases skip without a cluster |
 | `delete` | Deletes the kind cluster |
 
 ## Configuration
@@ -459,6 +561,7 @@ An exported value beats `.env`.
 | `DEPLOY_CHART` | `true` | Set to `false` to stop after the operators |
 | `INSTALL_MONITORING` | `false` | Installs kube-prometheus-stack with the tenant dashboards |
 | `HELM_TIMEOUT` | `600s` | Timeout for `helm upgrade --install --wait` |
+| `CATALOG` | the dev catalogue | Catalogue folder for `setup`, `install`, and `catalog-delete`; set by export or on the command line, not in `.env` |
 
 ## Troubleshooting
 
