@@ -61,12 +61,12 @@ tasks:
       - task: status
 
   install:
-    desc: Deploys a Tyk stack - picks a TykDeployment and creates an instance
+    desc: Deploys a Tyk stack - picks a TykDeployment and creates an instance (CATALOG=<folder> applies yours first)
     # interactive: install.sh asks which stack to deploy, so Task must not
     # capture its stdin.
     interactive: true
     cmds:
-      - ./install.sh {{.CLI_ARGS}}
+      - CALLER_DIR={{shellQuote .USER_WORKING_DIR}} CATALOG={{shellQuote (.CATALOG | default "")}} ./install.sh {{.CLI_ARGS}}
 
   operators:
     desc: Creates the kind cluster and its operators, without the idp-controller release
@@ -126,15 +126,9 @@ tasks:
       - CALLER_DIR={{shellQuote .USER_WORKING_DIR}} ./catalog.sh {{if .CATALOG}}{{shellQuote .CATALOG}}{{end}}
 
   catalog-delete:
-    desc: Removes the dev ProductClass and TykDeployment resources
+    desc: Removes the catalogue's ProductClass and TykDeployment resources (CATALOG=<folder> for your own)
     cmds:
-      - |
-        {{.RESOLVE_ROOT}}
-
-        DEV_DIR="${IDP_CONTROLLER_ROOT}/gitops/environments/dev"
-        kubectl --context {{.KUBE_CONTEXT}} delete --ignore-not-found \
-          -f "${DEV_DIR}/product-classes/" \
-          -f "${DEV_DIR}/topologies/"
+      - CALLER_DIR={{shellQuote .USER_WORKING_DIR}} ./catalog.sh --delete {{if .CATALOG}}{{shellQuote .CATALOG}}{{end}}
 
   status:
     desc: Reports the state of the cluster, the release, and the catalogue

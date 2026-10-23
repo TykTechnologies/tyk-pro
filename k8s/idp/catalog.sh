@@ -12,6 +12,7 @@
 #   ./catalog.sh [folder]           validate every file, then apply them all
 #   ./catalog.sh --check [folder]   validate every file, apply nothing
 #   ./catalog.sh --list [folder]    print the files that would be applied
+#   ./catalog.sh --delete [folder]  delete the resources the files define
 #
 # With no folder, the dev catalogue in the idp-controller checkout is used,
 # which is what setup has always applied.
@@ -69,7 +70,7 @@ kc() {
 }
 
 usage() {
-  error "usage: $0 [--check | --list] [folder]"
+  error "usage: $0 [--check | --list | --delete] [folder]"
 }
 
 ######################################
@@ -79,6 +80,7 @@ MODE="apply"
 case "${1-}" in
   --check) MODE="check"; shift ;;
   --list) MODE="list"; shift ;;
+  --delete) MODE="delete"; shift ;;
   -*)
     usage
     exit 1
@@ -257,6 +259,9 @@ for f in files:
     if f["rc"] != 0:
         with open(f["err"]) as fh:
             detail = [l.rstrip() for l in fh if l.strip()]
+        # kubectl's wording for an empty file reads like a usage mistake.
+        if detail == ["error: no objects passed to apply"]:
+            detail = ["holds no resources"]
         problems[f["name"]].extend(detail or [f"kubectl exited {f['rc']}"])
         continue
 
@@ -376,6 +381,19 @@ if [ "$MODE" = "list" ]; then
 fi
 
 requireCluster
+
+# Deleting needs no validation: a file that would fail it either defines
+# nothing in the cluster or defines something that should go anyway.
+if [ "$MODE" = "delete" ]; then
+  args=()
+  for f in "${FILES[@]}"; do
+    args+=(-f "$f")
+  done
+  log "deleting what ${#FILES[@]} file(s) from $FOLDER define"
+  kc delete --ignore-not-found "${args[@]}"
+  exit 0
+fi
+
 validate
 
 if [ "$MODE" = "check" ]; then
