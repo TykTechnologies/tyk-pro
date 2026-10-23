@@ -270,11 +270,19 @@ test_invalid_deployment_dangling_ref() {
   assert_absent tykdeployment catalog-test-dangling
 }
 
-test_disabled_addon_ref_only_warns() {
-  run ./catalog.sh --check "$FIXTURES/addon-dangling"
+# The checks must not reject a valid catalogue: a missing ProductClass that
+# only an addon defaulting to off needs warns, a ProductClass already in the
+# cluster counts, and the real dev catalogue passes.
+test_checks_are_not_too_strict() {
+  run ./catalog.sh "$FIXTURES/only-classes"
+  assert_exit 0 || return
+  run ./catalog.sh --check "$FIXTURES/lenient"
   assert_exit 0 || return
   assert_contains "[WARNING] catalog-test-addons.yaml" || return
-  assert_contains "addon 'portal' needs ProductClass 'catalog-test-off-missing'"
+  assert_contains "addon 'portal' needs ProductClass 'catalog-test-off-missing'" || return
+  run ./catalog.sh --check
+  assert_exit 0 || return
+  assert_contains "0 failed"
 }
 
 test_enabled_addon_ref_fails() {
@@ -282,25 +290,6 @@ test_enabled_addon_ref_fails() {
   assert_exit 1 || return
   assert_contains "[ERROR] catalog-test-enabled.yaml" || return
   assert_contains "addon 'portal' needs ProductClass 'catalog-test-on-missing'"
-}
-
-test_ref_satisfied_by_cluster() {
-  run ./catalog.sh "$FIXTURES/only-classes"
-  assert_exit 0 || return
-  local dir
-  dir="$(mktemp -d)"
-  cat > "$dir/catalog-test-uses-cluster.yaml" << 'EOF'
-apiVersion: platform.tyk.io/v1alpha1
-kind: TykDeployment
-metadata:
-  name: catalog-test-uses-cluster
-spec:
-  products:
-    - name: catalog-test-lonely
-EOF
-  run ./catalog.sh --check "$dir"
-  rm -rf "$dir"
-  assert_exit 0
 }
 
 test_wrong_kind() {
@@ -340,19 +329,14 @@ test_check_applies_nothing() {
   assert_absent productclass catalog-test-chart
 }
 
-test_delete_removes_folder_resources() {
+# Removes from the cluster what the folder's files define; the files stay.
+test_delete_removes_resources_from_cluster() {
   run ./catalog.sh "$FIXTURES/valid-nested"
   assert_exit 0 || return
   run ./catalog.sh --delete "$FIXTURES/valid-nested"
   assert_exit 0 || return
   assert_absent productclass catalog-test-chart || return
   assert_absent tykdeployment catalog-test-stack
-}
-
-test_default_flow_validates() {
-  run ./catalog.sh --check
-  assert_exit 0 || return
-  assert_contains "0 failed"
 }
 
 test_install_stops_on_bad_catalogue() {
@@ -408,16 +392,14 @@ for t in \
   test_malformed_yaml \
   test_invalid_deployment_schema \
   test_invalid_deployment_dangling_ref \
-  test_disabled_addon_ref_only_warns \
+  test_checks_are_not_too_strict \
   test_enabled_addon_ref_fails \
-  test_ref_satisfied_by_cluster \
   test_wrong_kind \
   test_duplicate_resource \
   test_empty_file \
   test_atomic_failure \
   test_check_applies_nothing \
-  test_delete_removes_folder_resources \
-  test_default_flow_validates \
+  test_delete_removes_resources_from_cluster \
   test_install_stops_on_bad_catalogue \
   test_install_offers_only_folder_stacks; do
   # Each case starts from a cluster holding no fixture resources, so one
