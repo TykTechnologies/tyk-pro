@@ -251,9 +251,10 @@ path, and run only when the kind cluster is up; without it, each prints
 `SKIP (no cluster)`. After `setup`, run `TEST_CLUSTER=require task -d k8s/idp
 test` so that a skip counts as a failure.
 
-Fixtures live in `tests/fixtures`, one folder for each case. Every resource
-they create is named `catalog-test-*`, and the suite removes those resources
-before each case and when it exits.
+Fixtures live in `tests/fixtures`: `valid-nested` for a catalogue that
+loads, `invalid` with one bad file per check, and `lenient` for the cases the
+checks must let through. Every resource they create is named `catalog-test-*`,
+and the suite removes those resources before each case and when it exits.
 
 ## Build and use a local image
 

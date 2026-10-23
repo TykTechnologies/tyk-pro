@@ -129,8 +129,9 @@ cleanup() {
     # shellcheck disable=SC2086
     kc delete --ignore-not-found $names > /dev/null
   fi
-  # The wrong-kind fixture is the one resource outside the catalogue kinds,
-  # and a catalog.sh that lost its kind check would leave it behind.
+  # The ConfigMap in the invalid fixture is the one resource outside the
+  # catalogue kinds, and a catalog.sh that lost its kind check would leave it
+  # behind.
   kc -n default delete configmap catalog-test-configmap --ignore-not-found > /dev/null
 }
 
@@ -171,14 +172,8 @@ test_empty_folder() {
   assert_contains "no .yaml or .yml files under"
 }
 
-test_folder_without_yaml() {
-  run ./catalog.sh --list "$FIXTURES/no-yaml"
-  assert_exit 1 || return
-  assert_contains "no .yaml or .yml files under"
-}
-
 test_file_instead_of_folder() {
-  run ./catalog.sh --list "$FIXTURES/no-yaml/definition.json"
+  run ./catalog.sh --list "$FIXTURES/valid-nested/ignored.json"
   assert_exit 1 || return
   assert_contains "not a folder"
 }
@@ -191,7 +186,7 @@ test_unreadable_subfolder() {
   local dir
   dir="$(mktemp -d)"
   mkdir "$dir/locked"
-  cp "$FIXTURES/only-classes/catalog-test-lonely.yaml" "$dir/"
+  cp "$FIXTURES/valid-nested/a-classes/catalog-test-chart.yaml" "$dir/"
   chmod 000 "$dir/locked"
   run ./catalog.sh --list "$dir"
   chmod 755 "$dir/locked"
@@ -247,34 +242,35 @@ test_loads_valid_folder() {
   assert_lacks "created"
 }
 
-test_malformed_yaml() {
-  run ./catalog.sh "$FIXTURES/malformed"
+# One folder holds one bad file per check, beside a valid file. Every check
+# must name its file, and the valid file must not be applied either.
+test_rejects_invalid_files() {
+  run ./catalog.sh "$FIXTURES/invalid"
   assert_exit 1 || return
-  assert_contains "[ERROR] b-broken.yaml" || return
-  assert_contains "1 valid, 1 failed" || return
-  assert_absent productclass catalog-test-fine
-}
-
-test_invalid_deployment_schema() {
-  run ./catalog.sh "$FIXTURES/invalid-schema"
-  assert_exit 1 || return
-  assert_contains "[ERROR] catalog-test-schema.yaml" || return
-  assert_absent tykdeployment catalog-test-schema
-}
-
-test_invalid_deployment_dangling_ref() {
-  run ./catalog.sh "$FIXTURES/dangling-ref"
-  assert_exit 1 || return
-  assert_contains "[ERROR] catalog-test-dangling.yaml" || return
+  assert_contains "[ERROR] broken.yaml" || return
+  assert_contains "error converting YAML to JSON" || return
+  assert_contains "[ERROR] schema.yaml" || return
+  assert_contains "spec.products in body must be of type array" || return
+  assert_contains "[ERROR] dangling.yaml" || return
   assert_contains "needs ProductClass 'catalog-test-nowhere'" || return
-  assert_absent tykdeployment catalog-test-dangling
+  assert_contains "[ERROR] enabled-addon.yaml" || return
+  assert_contains "addon 'portal' needs ProductClass 'catalog-test-on-missing'" || return
+  assert_contains "ConfigMap 'catalog-test-configmap' is not a ProductClass or TykDeployment" || return
+  assert_contains "ProductClass 'catalog-test-twice' is also defined in duplicate-2.yml" || return
+  assert_contains "ProductClass 'catalog-test-twice' is also defined in duplicate-1.yaml" || return
+  assert_contains "[ERROR] only-comments.yaml" || return
+  assert_contains "holds no resources" || return
+  assert_contains "1 valid, 8 failed" || return
+  assert_contains "nothing applied" || return
+  assert_absent productclass catalog-test-valid || return
+  assert_absent configmap catalog-test-configmap
 }
 
 # The checks must not reject a valid catalogue: a missing ProductClass that
 # only an addon defaulting to off needs warns, a ProductClass already in the
 # cluster counts, and the real dev catalogue passes.
 test_checks_are_not_too_strict() {
-  run ./catalog.sh "$FIXTURES/only-classes"
+  run ./catalog.sh "$FIXTURES/valid-nested"
   assert_exit 0 || return
   run ./catalog.sh --check "$FIXTURES/lenient"
   assert_exit 0 || return
@@ -283,43 +279,6 @@ test_checks_are_not_too_strict() {
   run ./catalog.sh --check
   assert_exit 0 || return
   assert_contains "0 failed"
-}
-
-test_enabled_addon_ref_fails() {
-  run ./catalog.sh --check "$FIXTURES/addon-enabled-dangling"
-  assert_exit 1 || return
-  assert_contains "[ERROR] catalog-test-enabled.yaml" || return
-  assert_contains "addon 'portal' needs ProductClass 'catalog-test-on-missing'"
-}
-
-test_wrong_kind() {
-  run ./catalog.sh "$FIXTURES/wrong-kind"
-  assert_exit 1 || return
-  assert_contains "ConfigMap 'catalog-test-configmap' is not a ProductClass or TykDeployment" || return
-  assert_absent configmap catalog-test-configmap
-}
-
-test_duplicate_resource() {
-  run ./catalog.sh "$FIXTURES/duplicate"
-  assert_exit 1 || return
-  assert_contains "ProductClass 'catalog-test-twice' is also defined in second.yml" || return
-  assert_contains "ProductClass 'catalog-test-twice' is also defined in first.yaml" || return
-  assert_absent productclass catalog-test-twice
-}
-
-test_empty_file() {
-  run ./catalog.sh "$FIXTURES/empty-file"
-  assert_exit 1 || return
-  assert_contains "[ERROR] only-comments.yaml" || return
-  assert_contains "holds no resources" || return
-  assert_absent productclass catalog-test-present
-}
-
-test_atomic_failure() {
-  run ./catalog.sh "$FIXTURES/atomic"
-  assert_exit 1 || return
-  assert_absent productclass catalog-test-atomic || return
-  assert_contains "nothing applied"
 }
 
 test_check_applies_nothing() {
@@ -342,7 +301,7 @@ test_delete_removes_resources_from_cluster() {
 test_install_stops_on_bad_catalogue() {
   local before
   before="$(instanceCount)"
-  run env CATALOG="$FIXTURES/atomic" ./install.sh simple-tyk-oss
+  run env CATALOG="$FIXTURES/invalid" ./install.sh simple-tyk-oss
   assert_exit 1 || return
   assert_contains "nothing was deployed" || return
   [ "$(instanceCount)" = "$before" ] || fail "an instance was created"
@@ -379,7 +338,6 @@ log "offline"
 check test_finds_nested_files_from_relative_folder
 check test_missing_folder
 check test_empty_folder
-check test_folder_without_yaml
 check test_file_instead_of_folder
 check test_unreadable_subfolder
 check test_rejects_unknown_flag
@@ -389,15 +347,8 @@ check test_default_lists_dev_catalogue
 log "cluster"
 for t in \
   test_loads_valid_folder \
-  test_malformed_yaml \
-  test_invalid_deployment_schema \
-  test_invalid_deployment_dangling_ref \
+  test_rejects_invalid_files \
   test_checks_are_not_too_strict \
-  test_enabled_addon_ref_fails \
-  test_wrong_kind \
-  test_duplicate_resource \
-  test_empty_file \
-  test_atomic_failure \
   test_check_applies_nothing \
   test_delete_removes_resources_from_cluster \
   test_install_stops_on_bad_catalogue \

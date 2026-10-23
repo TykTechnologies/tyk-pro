@@ -6,7 +6,7 @@ metadata:
   name: catalog-test-enabled
 spec:
   products:
-    - name: catalog-test-base
+    - name: catalog-test-valid
   addons:
     - name: portal
       default: Enabled

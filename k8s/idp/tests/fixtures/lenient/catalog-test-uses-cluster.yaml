@@ -1,4 +1,4 @@
-# Its ProductClass is in no file here; the test loads only-classes into the
+# Its ProductClass is in no file here; the test loads valid-nested into the
 # cluster first, and the reference check must count it.
 apiVersion: platform.tyk.io/v1alpha1
 kind: TykDeployment
@@ -6,4 +6,4 @@ metadata:
   name: catalog-test-uses-cluster
 spec:
   products:
-    - name: catalog-test-lonely
+    - name: catalog-test-chart
