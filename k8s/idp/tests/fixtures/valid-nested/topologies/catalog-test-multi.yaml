@@ -1,0 +1,17 @@
+apiVersion: platform.tyk.io/v1alpha1
+kind: ProductClass
+metadata:
+  name: catalog-test-multi
+spec:
+  chartRefs:
+    - chartName: tyk-oss
+      chartVersion: v4.0.0
+      url: "https://helm.tyk.io/public/helm/charts/"
+---
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-multi
+spec:
+  products:
+    - name: catalog-test-multi

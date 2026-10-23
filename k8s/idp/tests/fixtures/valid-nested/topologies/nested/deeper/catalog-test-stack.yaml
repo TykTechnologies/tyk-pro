@@ -1,0 +1,10 @@
+# A topology two folders down, using a ProductClass from a sibling folder, and
+# one from a .yml file.
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-stack
+spec:
+  products:
+    - name: catalog-test-chart
+    - name: catalog-test-extra

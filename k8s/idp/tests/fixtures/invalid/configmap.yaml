@@ -1,0 +1,8 @@
+# A valid resource, but not part of a catalogue.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-test-configmap
+  namespace: default
+data:
+  key: value
