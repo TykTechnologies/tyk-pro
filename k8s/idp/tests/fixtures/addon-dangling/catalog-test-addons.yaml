@@ -1,0 +1,15 @@
+# The addon that defaults to off names a missing ProductClass, which deploys
+# until someone switches it on. Mirrors mdcb-minimal's devPortal addon in the
+# dev catalogue.
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-addons
+spec:
+  products:
+    - name: catalog-test-base
+  addons:
+    - name: portal
+      default: Disabled
+      products:
+        - name: catalog-test-off-missing

@@ -130,6 +130,11 @@ tasks:
     cmds:
       - CALLER_DIR={{shellQuote .USER_WORKING_DIR}} ./catalog.sh --delete {{if .CATALOG}}{{shellQuote .CATALOG}}{{end}}
 
+  test:
+    desc: Tests catalog.sh; cases needing the cluster skip without one (TEST_CLUSTER=require to fail instead)
+    cmds:
+      - ./tests/run.sh
+
   status:
     desc: Reports the state of the cluster, the release, and the catalogue
     cmds:

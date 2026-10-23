@@ -1,0 +1,14 @@
+# An addon that defaults to on is deployed by every instance that does not
+# switch it off, so its missing ProductClass fails like a plain product.
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-enabled
+spec:
+  products:
+    - name: catalog-test-base
+  addons:
+    - name: portal
+      default: Enabled
+      products:
+        - name: catalog-test-on-missing
