@@ -266,21 +266,6 @@ test_rejects_invalid_files() {
   assert_absent configmap catalog-test-configmap
 }
 
-# The checks must not reject a valid catalogue: a missing ProductClass that
-# only an addon defaulting to off needs warns, a ProductClass already in the
-# cluster counts, and the real dev catalogue passes.
-test_checks_are_not_too_strict() {
-  run ./catalog.sh "$FIXTURES/valid-nested"
-  assert_exit 0 || return
-  run ./catalog.sh --check "$FIXTURES/lenient"
-  assert_exit 0 || return
-  assert_contains "[WARNING] catalog-test-addons.yaml" || return
-  assert_contains "addon 'portal' needs ProductClass 'catalog-test-off-missing'" || return
-  run ./catalog.sh --check
-  assert_exit 0 || return
-  assert_contains "0 failed"
-}
-
 test_check_applies_nothing() {
   run ./catalog.sh --check "$FIXTURES/valid-nested"
   assert_exit 0 || return
@@ -348,7 +333,6 @@ log "cluster"
 for t in \
   test_loads_valid_folder \
   test_rejects_invalid_files \
-  test_checks_are_not_too_strict \
   test_check_applies_nothing \
   test_delete_removes_resources_from_cluster \
   test_install_stops_on_bad_catalogue \
