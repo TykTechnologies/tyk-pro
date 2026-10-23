@@ -52,7 +52,7 @@ tasks:
       - ./deps.sh {{.CLI_ARGS}}
 
   setup:
-    desc: Builds the platform - cluster, operators, idp-controller release, catalogue
+    desc: Builds the platform - cluster, operators, idp-controller release, catalogue (CATALOG=<folder> for your own)
     cmds:
       - task: deps
       - task: operators
@@ -116,27 +116,14 @@ tasks:
   catalog:
     # A step of setup rather than a task of its own: the resources it applies
     # need the CRDs the helm release installs, so running it before the release
-    # fails.
+    # fails. CATALOG=<folder> swaps the dev catalogue for your own; without it,
+    # catalog.sh applies the dev catalogue as before.
+    #
+    # CALLER_DIR is where `task` was run, so a relative CATALOG means what it
+    # looks like rather than a path under k8s/idp.
     internal: true
     cmds:
-      - |
-        {{.RESOLVE_ROOT}}
-
-        DEV_DIR="${IDP_CONTROLLER_ROOT}/gitops/environments/dev"
-        for dir in product-classes topologies; do
-          if [ ! -d "${DEV_DIR}/${dir}" ]; then
-            echo "error: ${DEV_DIR}/${dir} not found"
-            exit 1
-          fi
-        done
-
-        # ProductClass and TykDeployment are cluster-scoped, so no namespace
-        # applies. The api-server lists them straight from the cluster; without
-        # them it answers every catalogue request with an empty list.
-        echo "==> applying the dev catalogue from ${DEV_DIR}"
-        kubectl --context {{.KUBE_CONTEXT}} apply \
-          -f "${DEV_DIR}/product-classes/" \
-          -f "${DEV_DIR}/topologies/"
+      - CALLER_DIR={{shellQuote .USER_WORKING_DIR}} ./catalog.sh {{if .CATALOG}}{{shellQuote .CATALOG}}{{end}}
 
   catalog-delete:
     desc: Removes the dev ProductClass and TykDeployment resources
