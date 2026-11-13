@@ -79,10 +79,14 @@ services:
       - ./confs/nginx.conf:/etc/nginx/nginx.conf
       - ./certs/nginx.crt:/etc/nginx/ssl/nginx.crt
       - ./certs/nginx.key:/etc/nginx/ssl/nginx.key
+      - ./certs/mcp-tls.crt:/etc/nginx/ssl/mcp-tls.crt
+      - ./certs/mcp-tls.key:/etc/nginx/ssl/mcp-tls.key
     networks:
       default:
         aliases:
           - wrong.host.badssl.com
+          # HTTPS front for mcp-server (see confs/nginx.conf)
+          - mcp-tls
     depends_on:
       - upstream
 
@@ -104,6 +108,9 @@ services:
     environment:
       - PORT=7878
       - DEBUG=false
+      # Behind nginx the mock sees plain HTTP, so pin the OAuth fixture identity to the HTTPS URL.
+      - OAUTH_FIXTURE_ISSUER=https://mcp-tls/fixtures/oauth
+      - OAUTH_FIXTURE_RESOURCE=https://mcp-tls/fixtures/oauth/mcp
     healthcheck:
       test:
         [

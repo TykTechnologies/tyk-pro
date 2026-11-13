@@ -8,6 +8,10 @@ services:
     volumes:
       - ./certs:/usr/local/share/ca-certificates
       - ${confs_dir}:/conf/
+      - ./certs/test-ca:/etc/tyk-test-ca:ro
+    environment:
+      # Adds the test CA (signs mcp-tls) to the system roots; one directory, no ':' list.
+      - SSL_CERT_DIR=/etc/tyk-test-ca
     ports:
       - "6000:6000"
       - "8003:8003"
