@@ -1,0 +1,6 @@
+apiVersion: platform.tyk.io/v1alpha1
+kind: ProductClass
+metadata:
+  name: catalog-test-broken
+spec:
+  chartRefs: [ { chartVersion: v1, url: "https://example.com"

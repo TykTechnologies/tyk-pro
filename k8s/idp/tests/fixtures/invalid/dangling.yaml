@@ -1,0 +1,8 @@
+# Valid to the api-server, undeployable: no such ProductClass exists.
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-dangling
+spec:
+  products:
+    - name: catalog-test-nowhere

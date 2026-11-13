@@ -14,11 +14,22 @@
 #   ./install.sh <topology>   deploy that TykDeployment without asking
 #
 # Environment:
+#   CATALOG        folder of ProductClass and TykDeployment files to apply first,
+#                  through catalog.sh; only that folder's stacks are then offered
 #   NAME           instance name           (default <topology>-1, or the next free number)
 #   OWNER          owner identifier        (default the git user's name, sanitised)
 #   DEPLOY_TIMEOUT wait for Running        (default 900s)
 
 set -euo pipefail
+
+# Captured before the cd below, which would otherwise change what a relative
+# CATALOG means.
+CALLER_DIR="${CALLER_DIR:-$PWD}"
+
+# Kept under its own name so that sourcing .env cannot replace it: a folder is a
+# per-run choice, and a relative path kept in .env would resolve differently
+# depending on where install ran.
+CATALOG_FOLDER="${CATALOG:-}"
 
 cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
@@ -96,6 +107,30 @@ kc() {
 ######################################
 # catalogue
 ######################################
+# Names the TykDeployments the CATALOG folder applied. Empty when no folder was
+# given, or when the folder holds only ProductClasses, and then the whole
+# cluster catalogue is offered as before.
+CATALOG_DEPLOYMENTS=""
+
+applyCatalogue() {
+  local names
+  names="$(mktemp)"
+  # shellcheck disable=SC2064
+  trap "rm -f '$names'" EXIT
+
+  if ! CALLER_DIR="$CALLER_DIR" CATALOG_DEPLOYMENTS_FILE="$names" ./catalog.sh "$CATALOG_FOLDER"; then
+    error "the catalogue in '$CATALOG_FOLDER' was not applied, so nothing was deployed"
+    exit 1
+  fi
+
+  CATALOG_DEPLOYMENTS="$(tr '\n' ' ' < "$names")"
+  CATALOG_DEPLOYMENTS="${CATALOG_DEPLOYMENTS% }"
+
+  if [ -z "$CATALOG_DEPLOYMENTS" ]; then
+    log "'$CATALOG_FOLDER' holds no TykDeployment, so every stack in the cluster is offered"
+  fi
+}
+
 requireCatalogue() {
   if ! kc get crd tykdeployments.platform.tyk.io > /dev/null 2>&1; then
     error "the platform.tyk.io CRDs are not installed"
@@ -111,6 +146,10 @@ requireCatalogue() {
 }
 
 listTopologies() {
+  if [ -n "$CATALOG_DEPLOYMENTS" ]; then
+    printf '%s\n' $CATALOG_DEPLOYMENTS | sort
+    return 0
+  fi
   kc get tykdeployment -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort
 }
 
@@ -118,10 +157,13 @@ listTopologies() {
 # need a second lookup.
 showCatalogue() {
   log "available stacks"
-  kc get tykdeployment -o json | python3 -c '
-import json, sys
+  kc get tykdeployment -o json | ONLY="$CATALOG_DEPLOYMENTS" python3 -c '
+import json, os, sys
 
 items = sorted(json.load(sys.stdin)["items"], key=lambda t: t["metadata"]["name"])
+only = os.environ["ONLY"].split()
+if only:
+    items = [t for t in items if t["metadata"]["name"] in only]
 for n, t in enumerate(items, 1):
     products = ", ".join(p["name"] for p in t["spec"].get("products", []))
     name = t["metadata"]["name"]
@@ -176,7 +218,7 @@ requireTopology() {
 
   if ! kc get tykdeployment "$topology" > /dev/null 2>&1; then
     error "no TykDeployment named '$topology'"
-    error "the catalogue holds: $(listTopologies | tr '\n' ' ')"
+    error "the catalogue holds: $(kc get tykdeployment -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')"
     exit 1
   fi
 }
@@ -281,6 +323,10 @@ printSummary() {
 ######################################
 # entrypoint
 ######################################
+if [ -n "$CATALOG_FOLDER" ]; then
+  applyCatalogue
+fi
+
 requireCatalogue
 
 TOPOLOGY="${1-}"

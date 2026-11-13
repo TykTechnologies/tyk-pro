@@ -1,0 +1,7 @@
+# products must be a list of references, not a string.
+apiVersion: platform.tyk.io/v1alpha1
+kind: TykDeployment
+metadata:
+  name: catalog-test-schema
+spec:
+  products: "catalog-test-chart"
