@@ -96,7 +96,7 @@ jobs:
           test_folder: api
           org_gh_token: ${{ steps.app-token.outputs.token }}
       - name: Run API tests
-        uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@TT-18717-mcp-postgres-dsn
+        uses: TykTechnologies/github-actions/.github/actions/tests/api-tests@production
         timeout-minutes: 25
         id: test_execution
         with:
