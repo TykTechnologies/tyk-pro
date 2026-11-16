@@ -111,6 +111,8 @@ services:
       # Behind nginx the mock sees plain HTTP, so pin the OAuth fixture identity to the HTTPS URL.
       - OAUTH_FIXTURE_ISSUER=https://mcp-tls/fixtures/oauth
       - OAUTH_FIXTURE_RESOURCE=https://mcp-tls/fixtures/oauth/mcp
+      # Test-only admin API the remote MCP tool override tests use to change the upstream tool list.
+      - MCP_ADMIN_ENABLED=true
     healthcheck:
       test:
         [
